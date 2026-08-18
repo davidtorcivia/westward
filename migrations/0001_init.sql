@@ -20,6 +20,7 @@ CREATE TABLE cameras (
   credential_ref TEXT,
   headers_json TEXT,
   state TEXT NOT NULL DEFAULT 'ok' CHECK(state IN ('ok','stale')),
+  stale_streak INTEGER NOT NULL DEFAULT 0,
   created_utc INTEGER NOT NULL,
   updated_utc INTEGER NOT NULL,
   CHECK(roi_x IS NULL OR (roi_x >= 0 AND roi_x <= 1)),

@@ -1,8 +1,8 @@
-location: {lat: 40.6782, lon: -73.9442, tz: America/New_York}
-http: {listen: ":8080"}
-db: {path: /data/westward.db}
-data: {root: /data}
-log: {level: info}
+location: { lat: 40.6782, lon: -73.9442, tz: America/New_York }
+http: { listen: ":8080" }
+db: { path: /data/westward.db }
+data: { root: /data }
+log: { level: info }
 
 # Notifier definitions. Secrets are env var NAMES — values never live here:
 #   WESTWARD_NTFY_TOKEN      optional ntfy access token
@@ -10,6 +10,18 @@ log: {level: info}
 #   WESTWARD_PUSHOVER_USER   pushover user key
 #   WESTWARD_WEBHOOK_HMAC_KEY optional webhook signing key
 notifiers:
-  - {id: ntfy-main, type: ntfy, enabled: true, server: "https://ntfy.sh", topic: CHANGE-ME}
-  - {id: pushover-main, type: pushover, enabled: false, token_env: WESTWARD_PUSHOVER_TOKEN, user_env: WESTWARD_PUSHOVER_USER}
-  - {id: hook-main, type: webhook, enabled: false, url: ""}
+  - {
+      id: ntfy-main,
+      type: ntfy,
+      enabled: true,
+      server: "https://ntfy.sh",
+      topic: CHANGE-ME,
+    }
+  - {
+      id: pushover-main,
+      type: pushover,
+      enabled: false,
+      token_env: WESTWARD_PUSHOVER_TOKEN,
+      user_env: WESTWARD_PUSHOVER_USER,
+    }
+  - { id: hook-main, type: webhook, enabled: false, url: "" }

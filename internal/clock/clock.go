@@ -59,6 +59,14 @@ func (f *Fake) After(d time.Duration) <-chan time.Time {
 	return ch
 }
 
+// Pending reports the number of registered but unfired timers. Tests use it
+// to wait until the caller is parked on After before advancing.
+func (f *Fake) Pending() int {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return len(f.pending)
+}
+
 // Advance moves the clock forward by d, firing every pending After whose
 // deadline has been reached.
 func (f *Fake) Advance(d time.Duration) {
