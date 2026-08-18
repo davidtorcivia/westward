@@ -1,0 +1,21 @@
+# internal docs — never tracked
+implementation-plan.md
+*.plan.md
+notes/
+
+# agent/session artifacts
+.pi/
+
+# binaries / test outputs
+westward
+/westward
+*.test
+*.out
+/tmp/
+
+# local config with real values
+config.yaml
+*.local.yaml
+
+# OS
+.DS_Store
