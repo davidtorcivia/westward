@@ -133,7 +133,7 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	// Admin: map tiles from CARTO/OSM; Leaflet sets style attributes at
 	// runtime, so styles allow inline (scripts stay strict).
 	if strings.HasPrefix(r.URL.Path, "/admin") {
-		csp = "default-src 'none'; img-src 'self' data: https://tile.openstreetmap.org https://*.basemaps.cartocdn.com; " +
+		csp = "default-src 'none'; img-src 'self' data: blob: https://tile.openstreetmap.org https://*.basemaps.cartocdn.com; " +
 			"style-src 'self' 'unsafe-inline'; script-src 'self'; connect-src 'self'"
 	}
 	w.Header().Set("Content-Security-Policy", csp)

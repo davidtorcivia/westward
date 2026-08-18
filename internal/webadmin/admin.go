@@ -18,6 +18,7 @@ import (
 
 	"github.com/davidtorcivia/westward/internal/config"
 	"github.com/davidtorcivia/westward/internal/engine"
+	"github.com/davidtorcivia/westward/internal/secutil"
 	"github.com/davidtorcivia/westward/internal/server"
 	"github.com/davidtorcivia/westward/internal/source"
 	"github.com/davidtorcivia/westward/internal/store"
@@ -150,7 +151,9 @@ func (a *Admin) cameraShot(w http.ResponseWriter, r *http.Request) {
 	}
 	jpegBytes, _, _, err := a.Preview(cam)
 	if err != nil {
-		http.Error(w, "fetch failed", http.StatusBadGateway)
+		// Show the real reason in the camera card overlay (admin-only page;
+		// source errors never embed credentials).
+		http.Error(w, "fetch failed: "+secutil.Redact(err.Error()), http.StatusBadGateway)
 		return
 	}
 	w.Header().Set("Content-Type", "image/jpeg")
@@ -317,6 +320,8 @@ func (a *Admin) cameraSave(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		cam = existing
+	} else {
+		cam.State = "ok" // CHECK constraint requires ok|stale from insert
 	}
 
 	if v := f.Get("type"); v != "" || create {

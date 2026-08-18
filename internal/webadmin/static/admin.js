@@ -9,23 +9,44 @@
       var empty = wrap.querySelector(".pvempty");
       if (!img || img.dataset.wired) return;
       img.dataset.wired = "1";
-      function failed() {
-        wrap.classList.add("err");
-        if (empty) empty.hidden = false;
+
+      function showState(ok, text) {
+        wrap.classList.toggle("err", !ok);
+        if (empty) {
+          empty.hidden = ok;
+          while (empty.firstChild) empty.removeChild(empty.firstChild);
+          if (!ok) {
+            var line1 = document.createElement("strong");
+            line1.textContent = "preview unavailable";
+            empty.appendChild(line1);
+            if (text) {
+              var line2 = document.createElement("span");
+              line2.textContent = text;
+              line2.className = "dim";
+              empty.appendChild(line2);
+            }
+          }
+        }
       }
-      function ok() {
-        wrap.classList.remove("err");
-        if (empty) empty.hidden = true;
+
+      function load() {
+        fetch("/admin/cameras/shot/" + encodeURIComponent(id) + "?v=" + Date.now())
+          .then((r) => {
+            if (!r.ok) {
+              return r.text().then((t) => {
+                throw new Error(t.replace(/^(fetch failed: )?/, "") || ("HTTP " + r.status));
+              });
+            }
+            return r.blob();
+          })
+          .then((b) => {
+            img.src = URL.createObjectURL(b);
+            showState(true);
+          })
+          .catch((e) => {
+            showState(false, e.message || String(e));
+          });
       }
-      img.addEventListener("error", failed);
-      img.addEventListener("load", ok);
-      if (!img.complete || img.naturalWidth === 0) {
-        // error may have fired before wiring
-        if (img.getAttribute("src"))
-          setTimeout(() => {
-            if (!img.complete || img.naturalWidth === 0) failed();
-          }, 4000);
-      } else ok();
 
       var btn = wrap
         .closest(".cam, .card")
@@ -33,17 +54,13 @@
       if (btn) {
         btn.addEventListener("click", () => {
           btn.disabled = true;
-          ok();
-          img.src =
-            "/admin/cameras/shot/" +
-            encodeURIComponent(id) +
-            "?v=" +
-            Date.now();
           setTimeout(() => {
             btn.disabled = false;
           }, 1500);
+          load();
         });
       }
+      load();
     });
   }
 

@@ -71,9 +71,12 @@ input {
   padding: 11px 13px;
   margin-bottom: 16px;
   border-radius: 9px;
-  background: rgba(12, 8, 20, 0.5);
+  background: #2b2342;
   color: #f6ece2;
   font: inherit;
+}
+input:hover {
+  background: #372c56;
 }
 input:focus {
   outline: 2px solid #ffb37a;
