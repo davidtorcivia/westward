@@ -7,15 +7,15 @@ One Go binary, one SQLite file, one volume. The public page is a bare grid
 of daily best frames. The admin backend manages cameras, thresholds, and
 notifiers. Designed to sit behind a Cloudflare tunnel.
 
-- **Public gallery** `/` — every day's best frame (or an honest dark cell
+- **Public gallery** `/`: every day's best frame (or an honest dark cell
   when nothing was captured), newest first, keyboard lightbox.
-- **Admin** `/admin` — cameras with ROI and publish-crop editors, alerts,
+- **Admin** `/admin`: cameras with ROI and publish-crop editors, alerts,
   forecast comparison, runtime settings, JSON status.
-- **Alerts** — heads-up ~35 min before sunset when forecast quality clears
+- **Alerts**: heads-up ~35 min before sunset when forecast quality clears
   the floor; one GO per day with the triggering frame when live color rises.
-- **Forecasts** — Open-Meteo heuristic (`openmeteo-h1`) and SunsetHue,
+- **Forecasts**: Open-Meteo heuristic (`openmeteo-h1`) and SunsetHue,
   stored append-only with raw responses for comparison.
-- **Archive** — best frame per day forever (with uncropped originals for
+- **Archive**: best frame per day forever (with uncropped originals for
   re-rendering); full frame sequences 5 days.
 
 ## Quick start (binary)
@@ -57,7 +57,7 @@ Recommended ingress:
 
 | Hostname / path | Service | Access |
 | --- | --- | --- |
-| `sunsets.example.com` (public) | `http://localhost:8080` | none — public grid |
+| `sunsets.example.com` (public) | `http://localhost:8080` | none: public grid |
 | `sunsets.example.com/admin*` | `http://localhost:8080` | **Cloudflare Access** (email OTP) |
 
 Basic Auth always protects `/admin`; Access is defense-in-depth, never a
@@ -65,16 +65,16 @@ dependency.
 
 ## Cameras
 
-**NYCTMC (NYC DOT)** — add from admin with the DOT camera id (uuid from
+**NYCTMC (NYC DOT)**: add from admin with the DOT camera id (uuid from
 `webcams.nyctmc.org/api/cameras`). Politeness is built in: 15 s floor,
 UA `westward-sunset/1.0 (personal project)`, 403/429 backoff, two 404s
 marks the camera stale (retry from admin).
 
 The shipped default publishes DOT frames (`publish_eligible=on`) under the
 operator's signed data-sharing agreement. If you do **not** have the
-agreement, turn this off — the admin checkbox confirms this explicitly.
+agreement, turn this off: the admin checkbox confirms this explicitly.
 
-**Generic HTTP JPEG** — any still-JPEG URL (Amcrest window cams:
+**Generic HTTP JPEG**: any still-JPEG URL (Amcrest window cams:
 `http://cam/cgi-bin/snapshot.cgi`, credentials via
 `WESTWARD_CAM_WINDOW=user:password`, never in the URL). For the public
 gallery prefer your own sky-oriented camera: the published image is the
@@ -85,12 +85,12 @@ full frame (or your publish crop), so frame it at sky.
 Two independent rectangles per camera, edited by dragging on the preview
 (plain drag = scoring ROI, shift-drag = publish crop; "crop ← ROI" copies).
 
-- **Scoring ROI** — region the sunset-color score reads (default: top 45%).
-- **Publish crop** — region cropped for the public grid. Keep the aspect
+- **Scoring ROI**: region the sunset-color score reads (default: top 45%).
+- **Publish crop**: region cropped for the public grid. Keep the aspect
   constant across edits for a tidy grid. Null publishes the full frame.
 
 Changing the crop affects future days. "re-render" on the dashboard
-recrops a past day from its kept original (new URL, old file deleted —
+recrops a past day from its kept original (new URL, old file deleted -
 immutable caching stays correct).
 
 ## Backup / restore
@@ -107,11 +107,11 @@ westward restore --from /data/backups/westward-<ts>.db --db /data/westward.db
 
 ## Operations
 
-- `GET /livez` — engine heartbeat (503 if the loop stalled)
-- `GET /readyz` — DB + data dir + scheduler
-- `GET /admin/status` (auth) — JSON: revision, cameras, delivery queue
-- `westward score --url https://…/image.jpg` — score any frame now
-- `westward healthcheck` — container healthcheck (`/readyz` probe)
+- `GET /livez`: engine heartbeat (503 if the loop stalled)
+- `GET /readyz`: DB + data dir + scheduler
+- `GET /admin/status` (auth): JSON: revision, cameras, delivery queue
+- `westward score --url https://…/image.jpg`: score any frame now
+- `westward healthcheck`: container healthcheck (`/readyz` probe)
 
 ## Notifiers
 
@@ -121,7 +121,7 @@ re-encode), webhook (HMAC-SHA256 signed, dedupe on `event_id`). Enable in
 one file in `internal/notify/`, one factory case in `internal/engine/alerts.go`.
 
 Exactly one GO event fires per day (atomic latch); a provider may still
-show a duplicate after an ambiguous network failure — no HTTP integration
+show a duplicate after an ambiguous network failure: no HTTP integration
 can prevent that.
 
 ## Development
@@ -136,4 +136,4 @@ Provider contracts are frozen as fixtures under `testdata/providers/`
 
 ## License
 
-MIT — see [LICENSE](LICENSE).
+MIT: see [LICENSE](LICENSE).

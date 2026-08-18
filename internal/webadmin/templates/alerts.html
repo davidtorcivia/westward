@@ -1,11 +1,13 @@
 {{template "head" .}}
 <h1>Alerts</h1>
-{{with .Data}}
-{{if .Test}}<p class="ok">{{.Test}}</p>{{end}}
+{{with .Data}} {{if .Test}}
+<p class="ok">{{.Test}}</p>
+{{end}}
 <section class="card">
   <h2>Events</h2>
-  {{if not .Events}}<p>none yet</p>{{end}}
-  {{range .Events}}
+  {{if not .Events}}
+  <p>none yet</p>
+  {{end}} {{range .Events}}
   <details class="ev">
     <summary>
       <span class="kind kind-{{.Kind}}">{{.Kind}}</span>
@@ -14,16 +16,22 @@
     </summary>
     <p>{{.Body}}</p>
     <table>
-      <tr><th>notifier</th><th>state</th><th>attempts</th><th>error</th></tr>
+      <tr>
+        <th>notifier</th>
+        <th>state</th>
+        <th>attempts</th>
+        <th>error</th>
+      </tr>
       {{range .Deliveries}}
-      <tr><td>{{.NotifierID}}</td>
+      <tr>
+        <td>{{.NotifierID}}</td>
         <td class="st-{{.State}}">{{.State}}</td>
         <td>{{.Attempts}}</td>
-        <td class="dim">{{.LastErr}}</td></tr>
+        <td class="dim">{{.LastErr}}</td>
+      </tr>
       {{end}}
     </table>
   </details>
   {{end}}
 </section>
-{{end}}
-{{template "foot" .}}
+{{end}} {{template "foot" .}}

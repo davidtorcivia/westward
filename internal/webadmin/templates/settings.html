@@ -1,7 +1,7 @@
 {{template "head" .}}
 <h1>Settings</h1>
 {{with .Data}}
-{{if .Saved}}<p class="ok">saved — scheduler picks changes up on the next cycle</p>{{end}}
+{{if .Saved}}<p class="ok">saved · scheduler picks changes up on the next cycle</p>{{end}}
 <section class="card">
 <form method="post" action="/admin/settings/save" class="gridform">
   <input type="hidden" name="csrf" value="{{$.CSRF}}">
