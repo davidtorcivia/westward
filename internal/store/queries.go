@@ -11,35 +11,39 @@ import (
 
 // Camera mirrors the cameras table.
 type Camera struct {
-	ID                     string
-	Name                   string
-	Type                   string // httpjpeg | nyctmc
-	Ref                    string // URL or DOT id
-	Enabled                bool
-	Role                   string // publish_primary | publish_backup | trigger_only
-	PublishPriority        int
-	PublishEligible        bool
-	Attribution            string
-	ROIX, ROIY, ROIW, ROIH *float64
-	ThresholdAbs           float64
-	TriggerJSON            string // overrides {"ratio","delta_abs","rise_delta"}
-	CredentialRef          string
-	HeadersJSON            string
-	State                  string // ok | stale
-	StaleStreak            int
-	CreatedUTC             int64
-	UpdatedUTC             int64
+	ID                         string
+	Name                       string
+	Type                       string // httpjpeg | nyctmc
+	Ref                        string // URL or DOT id
+	Enabled                    bool
+	Role                       string // publish_primary | publish_backup | trigger_only
+	PublishPriority            int
+	PublishEligible            bool
+	Attribution                string
+	ROIX, ROIY, ROIW, ROIH     *float64
+	CropX, CropY, CropW, CropH *float64
+	ThresholdAbs               float64
+	TriggerJSON                string // overrides {"ratio","delta_abs","rise_delta"}
+	CredentialRef              string
+	HeadersJSON                string
+	State                      string // ok | stale
+	StaleStreak                int
+	CreatedUTC                 int64
+	UpdatedUTC                 int64
 }
 
 const cameraCols = `id,name,type,ref,enabled,role,publish_priority,publish_eligible,attribution,
-roi_x,roi_y,roi_w,roi_h,threshold_abs,trigger_json,credential_ref,headers_json,state,stale_streak,created_utc,updated_utc`
+roi_x,roi_y,roi_w,roi_h,publish_crop_x,publish_crop_y,publish_crop_w,publish_crop_h,
+threshold_abs,trigger_json,credential_ref,headers_json,state,stale_streak,created_utc,updated_utc`
 
 func scanCamera(row interface{ Scan(...any) error }) (Camera, error) {
 	var c Camera
 	var roiX, roiY, roiW, roiH sql.NullFloat64
+	var cx, cy, cw, ch sql.NullFloat64
 	var attr, trig, cred, hdr sql.NullString
 	err := row.Scan(&c.ID, &c.Name, &c.Type, &c.Ref, &c.Enabled, &c.Role, &c.PublishPriority,
-		&c.PublishEligible, &attr, &roiX, &roiY, &roiW, &roiH, &c.ThresholdAbs, &trig, &cred, &hdr,
+		&c.PublishEligible, &attr, &roiX, &roiY, &roiW, &roiH, &cx, &cy, &cw, &ch,
+		&c.ThresholdAbs, &trig, &cred, &hdr,
 		&c.State, &c.StaleStreak, &c.CreatedUTC, &c.UpdatedUTC)
 	if err != nil {
 		return c, err
@@ -52,6 +56,7 @@ func scanCamera(row interface{ Scan(...any) error }) (Camera, error) {
 		return nil
 	}
 	c.ROIX, c.ROIY, c.ROIW, c.ROIH = f(roiX), f(roiY), f(roiW), f(roiH)
+	c.CropX, c.CropY, c.CropW, c.CropH = f(cx), f(cy), f(cw), f(ch)
 	c.Attribution, c.TriggerJSON, c.CredentialRef, c.HeadersJSON = attr.String, trig.String, cred.String, hdr.String
 	return c, nil
 }
@@ -89,9 +94,10 @@ func (s *Store) InsertCamera(c *Camera) error {
 	}
 	now := time.Now().UnixMilli()
 	c.CreatedUTC, c.UpdatedUTC = now, now
-	_, err := s.db.Exec(`INSERT INTO cameras(`+cameraCols+`) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+	_, err := s.db.Exec(`INSERT INTO cameras(`+cameraCols+`) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
 		c.ID, c.Name, c.Type, c.Ref, c.Enabled, c.Role, c.PublishPriority, c.PublishEligible,
 		nullStr(c.Attribution), nullF(c.ROIX), nullF(c.ROIY), nullF(c.ROIW), nullF(c.ROIH),
+		nullF(c.CropX), nullF(c.CropY), nullF(c.CropW), nullF(c.CropH),
 		c.ThresholdAbs, nullStr(c.TriggerJSON), nullStr(c.CredentialRef), nullStr(c.HeadersJSON),
 		c.State, c.StaleStreak, c.CreatedUTC, c.UpdatedUTC)
 	return err
@@ -100,10 +106,13 @@ func (s *Store) InsertCamera(c *Camera) error {
 func (s *Store) UpdateCamera(c *Camera) error {
 	c.UpdatedUTC = time.Now().UnixMilli()
 	_, err := s.db.Exec(`UPDATE cameras SET name=?,type=?,ref=?,enabled=?,role=?,publish_priority=?,
-	publish_eligible=?,attribution=?,roi_x=?,roi_y=?,roi_w=?,roi_h=?,threshold_abs=?,trigger_json=?,
+	publish_eligible=?,attribution=?,roi_x=?,roi_y=?,roi_w=?,roi_h=?,
+	publish_crop_x=?,publish_crop_y=?,publish_crop_w=?,publish_crop_h=?,
+	threshold_abs=?,trigger_json=?,
 	credential_ref=?,headers_json=?,state=?,stale_streak=?,updated_utc=? WHERE id=?`,
 		c.Name, c.Type, c.Ref, c.Enabled, c.Role, c.PublishPriority, c.PublishEligible,
 		nullStr(c.Attribution), nullF(c.ROIX), nullF(c.ROIY), nullF(c.ROIW), nullF(c.ROIH),
+		nullF(c.CropX), nullF(c.CropY), nullF(c.CropW), nullF(c.CropH),
 		c.ThresholdAbs, nullStr(c.TriggerJSON), nullStr(c.CredentialRef), nullStr(c.HeadersJSON),
 		c.State, c.StaleStreak, c.UpdatedUTC, c.ID)
 	return err
@@ -118,6 +127,23 @@ func (s *Store) BumpStaleStreak(cameraID string, delta int) error {
 	_, err := s.db.Exec(`UPDATE cameras SET stale_streak=stale_streak+?, updated_utc=? WHERE id=?`,
 		delta, time.Now().UnixMilli(), cameraID)
 	return err
+}
+
+// ValidateCrop enforces the crop rules ALTER TABLE cannot express:
+// all-or-none components and x+w<=1, y+h<=1. NaN/range checks live in the
+// per-column CHECKs; pixel-size check runs at use time (score.PixelRect).
+func ValidateCrop(c *Camera) error {
+	set := c.CropX != nil || c.CropY != nil || c.CropW != nil || c.CropH != nil
+	if !set {
+		return nil
+	}
+	if c.CropX == nil || c.CropY == nil || c.CropW == nil || c.CropH == nil {
+		return errors.New("crop: all four components required")
+	}
+	if *c.CropX+*c.CropW > 1.000001 || *c.CropY+*c.CropH > 1.000001 {
+		return errors.New("crop: x+w or y+h exceeds 1")
+	}
+	return nil
 }
 
 func nullF(v *float64) any {

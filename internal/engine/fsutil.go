@@ -10,6 +10,9 @@ import (
 	"strings"
 
 	"golang.org/x/image/draw"
+
+	"github.com/davidtorcivia/westward/internal/score"
+	"github.com/davidtorcivia/westward/internal/store"
 )
 
 // writeAtomic implements the crash-safe persistence order: temp file in the
@@ -93,4 +96,63 @@ func thumb(jpegBytes []byte, w int, quality int) ([]byte, error) {
 		return nil, err
 	}
 	return buf.Bytes(), nil
+}
+
+// cameraCrop validates a stored publish crop against real image bounds
+// (min 64x64 mapped; NaN/range junk falls back to full frame, never fails
+// the day). Returns nil for "no crop" (publish full frame).
+func cameraCrop(cam store.Camera, imgW, imgH int) *score.ROI {
+	if cam.CropX == nil || cam.CropY == nil || cam.CropW == nil || cam.CropH == nil {
+		return nil
+	}
+	roi := score.ROI{X: *cam.CropX, Y: *cam.CropY, W: *cam.CropW, H: *cam.CropH}
+	if _, err := score.PixelRect(roi, image.Rect(0, 0, imgW, imgH)); err != nil {
+		return nil // invalid crop: fail open to full frame
+	}
+	return &roi
+}
+
+// cropOrFull returns the published bytes: crop applied (or the full frame
+// when roi is nil), re-encoded q90. Deterministic pipeline for both paths
+// so the content hash always reflects the published bytes.
+func cropOrFull(jpegBytes []byte, roi *score.ROI) ([]byte, error) {
+	img, _, err := image.Decode(bytes.NewReader(jpegBytes))
+	if err != nil {
+		return nil, err
+	}
+	src := image.Image(img)
+	if roi != nil {
+		rect, err := score.PixelRect(*roi, img.Bounds())
+		if err != nil {
+			return nil, err
+		}
+		if cr, ok := img.(interface {
+			SubImage(r image.Rectangle) image.Image
+		}); ok {
+			src = cr.SubImage(rect)
+		} else {
+			cp := image.NewRGBA(image.Rect(0, 0, rect.Dx(), rect.Dy()))
+			draw.Draw(cp, cp.Bounds(), img, rect.Min, draw.Src)
+			src = cp
+		}
+	}
+	var buf bytes.Buffer
+	if err := jpeg.Encode(&buf, src, &jpeg.Options{Quality: 90}); err != nil {
+		return nil, err
+	}
+	return buf.Bytes(), nil
+}
+
+// BestSidecar is the recovery record written next to every published best
+// image and used by RecropDay and days-row rebuilds.
+type BestSidecar struct {
+	Date       string      `json:"date"`
+	Score      float64     `json:"score"`
+	Camera     string      `json:"camera"`
+	CameraName string      `json:"camera_name"`
+	TakenUTC   int64       `json:"taken_utc"`
+	Hash       string      `json:"hash"`
+	OrigHash   string      `json:"orig_hash"`
+	OrigPath   string      `json:"orig_path"`
+	Crop       *[4]float64 `json:"crop,omitempty"` // x,y,w,h normalized; nil = full frame
 }

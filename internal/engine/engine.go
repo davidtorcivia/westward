@@ -49,6 +49,15 @@ type AlertSender interface {
 	SendGO(ctx context.Context, localDate string, camName string, res score.Result, jpeg []byte, comps TriggerComponents) error
 }
 
+// ensureSettings self-heals direct calls (Finalize/Recrop/Retention from
+// tests or admin) that skip Run's periodic reload.
+func (e *Engine) ensureSettings() error {
+	if e.loc == nil {
+		return e.loadSettings()
+	}
+	return nil
+}
+
 func (e *Engine) loadSettings() error {
 	s, rev, err := e.Store.GetSettings()
 	if err != nil {
@@ -364,6 +373,9 @@ func (e *Engine) notifierIDs() []string { return nil } // phase 5 wires real not
 // FinalizeDay applies archive eligibility, publication roles, writes best
 // images + thumbs + sidecar, and completes the days row.
 func (e *Engine) FinalizeDay(ctx context.Context, date string) error {
+	if err := e.ensureSettings(); err != nil {
+		return err
+	}
 	cams, err := e.Store.ListCameras()
 	if err != nil {
 		return err
@@ -435,16 +447,36 @@ func (e *Engine) FinalizeDay(ctx context.Context, date string) error {
 		e.Store.CompleteDay(date, "failed", "best frame file missing", nil, "", 0, "", "", "")
 		return err
 	}
-	hash := shortHash(pub.f.SHA256)
-	bestPath := fmt.Sprintf("%s/best/%s.%s.jpg", e.DataRoot, date, hash)
-	if err := writeAtomic(bestPath, jpegBytes); err != nil {
+
+	// Uncropped original, kept forever, never publicly served: recrop source.
+	origHash := shortHash(pub.f.SHA256)
+	origPath := fmt.Sprintf("%s/best/orig/%s.%s.jpg", e.DataRoot, date, origHash)
+	if err := writeAtomic(origPath, jpegBytes); err != nil {
 		return err
 	}
-	t480, err := thumb(jpegBytes, 480, 80)
+
+	// Published image: publish_crop applied (nil = full frame), re-encoded
+	// q90. The filename hash is of the PUBLISHED bytes, so URLs change with
+	// content and immutable caching stays safe.
+	crop := cameraCrop(pub.cam, pub.f.Width, pub.f.Height)
+	if crop == nil && pub.cam.CropX != nil {
+		e.Log.Warn("publish crop invalid for frame, publishing full frame",
+			"camera", pub.cam.Name, "w", pub.f.Width, "h", pub.f.Height)
+	}
+	pubBytes, err := cropOrFull(jpegBytes, crop)
 	if err != nil {
 		return err
 	}
-	t240, err := thumb(jpegBytes, 240, 75)
+	hash := shortHash(shaHex(pubBytes))
+	bestPath := fmt.Sprintf("%s/best/%s.%s.jpg", e.DataRoot, date, hash)
+	if err := writeAtomic(bestPath, pubBytes); err != nil {
+		return err
+	}
+	t480, err := thumb(pubBytes, 480, 80)
+	if err != nil {
+		return err
+	}
+	t240, err := thumb(pubBytes, 240, 75)
 	if err != nil {
 		return err
 	}
@@ -456,10 +488,16 @@ func (e *Engine) FinalizeDay(ctx context.Context, date string) error {
 	if err := writeAtomic(p240, t240); err != nil {
 		return err
 	}
-	// Sidecar enables days rebuild without the DB (plan §8.5.9).
-	sidecar, _ := json.Marshal(map[string]any{
-		"date": date, "score": *pub.f.Score, "camera": pub.cam.ID,
-		"camera_name": pub.cam.Name, "taken_utc": pub.f.FetchedUTC, "hash": hash,
+	// Sidecar enables days rebuild without the DB (plan §8.5.9) and recrop
+	// from the original (change request: sidecar records crop + orig path).
+	var cropArr *[4]float64
+	if crop != nil {
+		cropArr = &[4]float64{crop.X, crop.Y, crop.W, crop.H}
+	}
+	sidecar, _ := json.Marshal(BestSidecar{
+		Date: date, Score: *pub.f.Score, Camera: pub.cam.ID, CameraName: pub.cam.Name,
+		TakenUTC: pub.f.FetchedUTC, Hash: hash, OrigHash: origHash, OrigPath: origPath,
+		Crop: cropArr,
 	})
 	if err := writeAtomic(bestPath+".json", sidecar); err != nil {
 		return err
@@ -469,13 +507,17 @@ func (e *Engine) FinalizeDay(ctx context.Context, date string) error {
 		pub.f.FetchedUTC, bestPath, p480, p240); err != nil {
 		return err
 	}
-	e.Log.Info("day finalized", "date", date, "score", *pub.f.Score, "camera", pub.cam.Name)
+	e.Log.Info("day finalized", "date", date, "score", *pub.f.Score, "camera", pub.cam.Name,
+		"cropped", crop != nil)
 	return nil
 }
 
 // Retention deletes frame dirs and rows past retention.frames_days. Never
 // touches /data/best.
 func (e *Engine) Retention(ctx context.Context, today string) error {
+	if err := e.ensureSettings(); err != nil {
+		return err
+	}
 	cutoff := parseDate(today, e.loc).AddDate(0, 0, -e.settings.RetentionFramesDays)
 	cutoffStr := cutoff.Format("2006-01-02")
 	if err := e.Store.DeleteFramesBefore(cutoffStr); err != nil {
