@@ -5,11 +5,13 @@ import (
 	"encoding/json"
 	"fmt"
 	"log/slog"
+	"os"
 	"syscall"
 	"time"
 
 	"github.com/davidtorcivia/westward/internal/clock"
 	"github.com/davidtorcivia/westward/internal/config"
+	"github.com/davidtorcivia/westward/internal/forecast"
 	"github.com/davidtorcivia/westward/internal/health"
 	"github.com/davidtorcivia/westward/internal/score"
 	"github.com/davidtorcivia/westward/internal/solar"
@@ -28,8 +30,12 @@ type Engine struct {
 
 	// Fetchers builds the capture set from current DB state each run.
 	Fetchers func(ctx context.Context) ([]CamFetcher, error)
-	// Alerts sends GO notifications (phase 5; nil = log only).
-	Alerts AlertSender
+	// Alerts delivers durable events; nil = capture without delivery.
+	Alerts *AlertManager
+	// Forecast providers (nil = slots log only).
+	OpenMeteo       *forecast.OpenMeteo
+	SunsetHue       *forecast.SunsetHue
+	SunsetHueKeyEnv string // env name for the sunsethue key
 	// DiskFree returns free bytes of the data volume; overridable in tests.
 	DiskFree func(path string) (uint64, error)
 
@@ -165,20 +171,25 @@ func (e *Engine) tick(ctx context.Context) error {
 		}
 	}
 
-	// Forecast slot (phase 4 wires the provider; slot keeps the schedule honest).
+	// Forecast slot at sunset-40m: fetch selected + comparison providers,
+	// store observations (append-only).
 	if t := ev.Sunset.Add(-40 * time.Minute); !now.Before(t) {
 		var done string
 		if ok, _ := e.Store.GetSettingRaw("forecast_last", &done); !ok || done != date {
-			e.Store.SetSettingRaw("forecast_last", date) // provider integration: phase 4
-			e.Log.Info("forecast slot reached (provider arrives in phase 4)")
+			e.fetchForecasts(ctx, date, ev)
+			e.Store.SetSettingRaw("forecast_last", date)
 		}
 	}
 
-	// Heads-up slot: phase 4 (quality gate needs forecasts).
+	// Heads-up slot at sunset-35m: quality floor gate over the selected
+	// provider's latest observation; fallback to openmeteo on failure.
 	if t := ev.Sunset.Add(-35 * time.Minute); !now.Before(t) {
 		var done string
 		if ok, _ := e.Store.GetSettingRaw("headsup_last", &done); !ok || done != date {
-			e.Store.SetSettingRaw("headsup_last", date) // quality-gated send: phase 4
+			e.Store.SetSettingRaw("headsup_last", date)
+			if e.Alerts != nil {
+				e.sendHeadsUp(ctx, date, ev)
+			}
 		}
 	}
 
@@ -242,11 +253,12 @@ func (e *Engine) RunWindow(ctx context.Context, date string, ev solar.Events, wS
 
 	// Per-camera run state.
 	type camState struct {
-		f       CamFetcher
-		trig    *TriggerState
-		lastSHA string
-		params  TriggerParams
-		roi     *score.ROI
+		f             CamFetcher
+		trig          *TriggerState
+		lastSHA       string
+		params        TriggerParams
+		roi           *score.ROI
+		lastFramePath string
 	}
 	states := make([]camState, 0, len(fetchers))
 	for _, f := range fetchers {
@@ -306,6 +318,7 @@ func (e *Engine) RunWindow(ctx context.Context, date string, ev solar.Events, wS
 			}
 			if !lowDisk {
 				p := uniquePath(framePath(e.DataRoot, st.f.Camera.ID, date, e.Clk.Now().UnixMilli(), 0))
+				st.lastFramePath = p
 				if err := writeAtomic(p, jpegBytes); err != nil {
 					e.Log.Error("frame write failed", "err", err.Error())
 				} else {
@@ -326,22 +339,23 @@ func (e *Engine) RunWindow(ctx context.Context, date string, ev solar.Events, wS
 
 			st.trig.Append(e.Clk.Now(), res.Score)
 			if st.trig.Evaluate(st.params) {
-				if ok, err := e.Store.TryInsertEvent(&store.AlertEvent{
+				imagePath := ""
+				if !lowDisk {
+					imagePath = st.lastFramePath
+				}
+				ok, err := e.Store.TryInsertEvent(&store.AlertEvent{
 					EventKey:  date + ":go",
 					LocalDate: date, Kind: "go",
 					Title: fmt.Sprintf("GO — sunset is happening (%.1f)", res.Score),
 					Body: fmt.Sprintf("Camera: %s. Peak usually 5–15 min after sundown (%s).",
 						st.f.Camera.Name, ev.Sunset.In(e.loc).Format("15:04")),
+					ImagePath:    imagePath,
 					MetadataJSON: compsJSON(st.trig.Components),
-				}, e.notifierIDs()); err != nil {
+				}, e.alertNotifierIDs())
+				if err != nil {
 					e.Log.Error("go latch failed", "err", err.Error())
 				} else if ok {
 					e.Log.Info("GO fired", "camera", st.f.Camera.Name, "score", res.Score)
-					if e.Alerts != nil {
-						if err := e.Alerts.SendGO(ctx, date, st.f.Camera.Name, res, jpegBytes, st.trig.Components); err != nil {
-							e.Log.Error("go delivery failed", "err", err.Error())
-						}
-					}
 				}
 			}
 		}
@@ -368,7 +382,12 @@ func (e *Engine) RunWindow(ctx context.Context, date string, ev solar.Events, wS
 	return e.FinalizeDay(ctx, date)
 }
 
-func (e *Engine) notifierIDs() []string { return nil } // phase 5 wires real notifiers
+func (e *Engine) alertNotifierIDs() []string {
+	if e.Alerts == nil {
+		return nil
+	}
+	return e.Alerts.notifierIDs()
+}
 
 // FinalizeDay applies archive eligibility, publication roles, writes best
 // images + thumbs + sidecar, and completes the days row.
@@ -543,4 +562,85 @@ func parseDate(s string, loc *time.Location) time.Time {
 		return time.Now().In(loc)
 	}
 	return t
+}
+
+// fetchForecasts stores observations for the selected provider (and the
+// comparison provider when enabled and free/keys available).
+func (e *Engine) fetchForecasts(ctx context.Context, date string, ev solar.Events) {
+	selected := e.settings.Forecast.Provider
+	fetch := func(p forecast.Provider, sel bool) {
+		if p == nil {
+			return
+		}
+		f, err := p.SunsetForecast(ctx, e.settings.Lat, e.settings.Lon, date)
+		if err != nil {
+			e.Log.Warn("forecast fetch failed", "provider", p.Name(), "err", err.Error())
+			return
+		}
+		if err := e.Store.InsertForecastObservation(date, p.Name(), time.Now().UnixMilli(),
+			f.EventUTC.UnixMilli(), f.Quality, f.Detail, string(f.RawJSON), f.AlgoVersion, sel); err != nil {
+			e.Log.Error("forecast store failed", "provider", p.Name(), "err", err.Error())
+		} else {
+			e.Log.Info("forecast stored", "provider", p.Name(), "quality", f.Quality, "selected", sel)
+		}
+	}
+
+	var sel, cmp forecast.Provider
+	if e.OpenMeteo != nil {
+		e.OpenMeteo.Tuning = forecast.Tuning{
+			Peak:       e.settings.Forecast.OpenMeteo.Tuning.Peak,
+			Width:      e.settings.Forecast.OpenMeteo.Tuning.Width,
+			LowPenalty: e.settings.Forecast.OpenMeteo.Tuning.LowPenalty,
+			HumPenalty: e.settings.Forecast.OpenMeteo.Tuning.HumPenalty,
+			Overlap:    e.settings.Forecast.OpenMeteo.Tuning.Overlap,
+		}
+		cmp = e.OpenMeteo
+	}
+	if e.SunsetHue != nil {
+		if key := os.Getenv(e.SunsetHueKeyEnv); key != "" {
+			e.SunsetHue.APIKey = key
+			if selected == "sunsethue" {
+				sel = e.SunsetHue
+			}
+		}
+	}
+	if sel == nil && cmp != nil {
+		sel = cmp // openmeteo default
+	}
+	if selected == "openmeteo" {
+		sel, cmp = cmp, nil
+		if e.settings.Forecast.ComparisonEnabled && e.SunsetHue != nil {
+			if key := os.Getenv(e.SunsetHueKeyEnv); key != "" {
+				cmp = e.SunsetHue
+			}
+		}
+	}
+	fetch(sel, true)
+	fetch(cmp, false)
+}
+
+// sendHeadsUp gates the day's heads-up on the selected provider's quality.
+func (e *Engine) sendHeadsUp(ctx context.Context, date string, ev solar.Events) {
+	selected := e.settings.Forecast.Provider
+	obs, ok, err := e.Store.LatestForecastObservation(date, selected)
+	if err != nil {
+		e.Log.Error("heads-up lookup failed", "err", err.Error())
+		return
+	}
+	fallbackNote := ""
+	if !ok {
+		if selected == "sunsethue" {
+			// provider failed: fall back to openmeteo observation if any
+			obs, ok, _ = e.Store.LatestForecastObservation(date, "openmeteo")
+			fallbackNote = " (sunsethue unavailable; openmeteo fallback)"
+		}
+		if !ok {
+			e.Log.Warn("heads-up skipped: no forecast observation", "date", date)
+			return
+		}
+	}
+	if err := e.Alerts.HeadsUp(ctx, date, obs.Quality, e.settings.QualityFloor,
+		ev.Sunset, obs.Detail+fallbackNote, obs.Provider); err != nil {
+		e.Log.Error("heads-up failed", "err", err.Error())
+	}
 }

@@ -16,7 +16,6 @@ import (
 	"github.com/davidtorcivia/westward/internal/clock"
 	"github.com/davidtorcivia/westward/internal/config"
 	"github.com/davidtorcivia/westward/internal/health"
-	"github.com/davidtorcivia/westward/internal/score"
 	"github.com/davidtorcivia/westward/internal/solar"
 	"github.com/davidtorcivia/westward/internal/store"
 )
@@ -61,18 +60,6 @@ func encodeSolid(t *testing.T, r, g, b uint8) []byte {
 		t.Fatal(err)
 	}
 	return buf.Bytes()
-}
-
-type recordingAlerts struct {
-	mu    sync.Mutex
-	calls []string
-}
-
-func (a *recordingAlerts) SendGO(ctx context.Context, localDate, camName string, res score.Result, jpeg []byte, c TriggerComponents) error {
-	a.mu.Lock()
-	defer a.mu.Unlock()
-	a.calls = append(a.calls, localDate)
-	return nil
 }
 
 func testEngine(t *testing.T, start time.Time) (*Engine, *clock.Fake, *store.Store, string) {
@@ -131,8 +118,7 @@ func TestEndToEndDay(t *testing.T) {
 	}
 
 	sc := newScriptedCam(t)
-	alerts := &recordingAlerts{}
-	e.Alerts = alerts
+	// No AlertManager: e2e asserts the durable event latch itself.
 	e.Fetchers = func(ctx context.Context) ([]CamFetcher, error) {
 		return []CamFetcher{{Camera: *cam, Fetch: sc.fetch}}, nil
 	}
@@ -179,9 +165,6 @@ func TestEndToEndDay(t *testing.T) {
 	}
 	if goEvent.Kind != "go" || goEvent.Title == "" {
 		t.Fatalf("bad event: %+v", goEvent)
-	}
-	if len(alerts.calls) != 1 {
-		t.Fatalf("alerts sent %d times, want 1", len(alerts.calls))
 	}
 
 	// Day complete with best artifacts on disk.

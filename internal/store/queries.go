@@ -579,3 +579,240 @@ func (s *Store) HasRunningRun(localDate string) (bool, error) {
 	}
 	return err == nil, err
 }
+
+// InsertForecastObservation appends one provider observation (append-only).
+func (s *Store) InsertForecastObservation(localDate, provider string, fetchedUTC, eventUTC int64,
+	quality float64, detail, rawJSON, algoVersion string, selected bool) error {
+	var lead *int64
+	if eventUTC > 0 && fetchedUTC > 0 {
+		l := (eventUTC - fetchedUTC) / 60000
+		lead = &l
+	}
+	_, err := s.db.Exec(`INSERT INTO forecast_observations(local_date,provider,fetched_utc,event_utc,
+	lead_minutes,quality,detail,raw_json,algorithm_version,selected)
+	VALUES(?,?,?,?,?,?,?,?,?,?)`, localDate, provider, fetchedUTC, nn(eventUTC), lead,
+		quality, nullStr(detail), rawJSON, algoVersion, selected)
+	return err
+}
+
+type ForecastObs struct {
+	LocalDate  string
+	Provider   string
+	FetchedUTC int64
+	EventUTC   int64
+	Quality    float64
+	Detail     string
+	Selected   bool
+	Algorithm  string
+}
+
+// LatestForecastObservation returns the date's most recent observation for a
+// provider.
+func (s *Store) LatestForecastObservation(localDate, provider string) (ForecastObs, bool, error) {
+	var o ForecastObs
+	var detail sql.NullString
+	var ev sql.NullInt64
+	var sel int
+	err := s.db.QueryRow(`SELECT local_date,provider,fetched_utc,event_utc,quality,detail,algorithm_version,selected
+	FROM forecast_observations WHERE local_date=? AND provider=? ORDER BY fetched_utc DESC LIMIT 1`,
+		localDate, provider).Scan(&o.LocalDate, &o.Provider, &o.FetchedUTC, &ev, &o.Quality, &detail, &o.Algorithm, &sel)
+	if errors.Is(err, sql.ErrNoRows) {
+		return o, false, nil
+	}
+	if err != nil {
+		return o, false, err
+	}
+	o.EventUTC, o.Detail, o.Selected = ev.Int64, detail.String, sel == 1
+	return o, true, nil
+}
+
+// ForecastComparison returns per-date latest quality for both providers for
+// the last N days, joined with observed best color score.
+func (s *Store) ForecastComparison(days int) ([]map[string]any, error) {
+	rows, err := s.db.Query(`SELECT local_date, provider, quality FROM forecast_observations
+	WHERE fetched_utc = (SELECT MAX(fetched_utc) FROM forecast_observations f2
+	WHERE f2.local_date = forecast_observations.local_date AND f2.provider = forecast_observations.provider)
+	ORDER BY local_date DESC LIMIT ?`, days*4)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	byDate := map[string]map[string]any{}
+	var order []string
+	for rows.Next() {
+		var d, p string
+		var q float64
+		if err := rows.Scan(&d, &p, &q); err != nil {
+			return nil, err
+		}
+		if _, ok := byDate[d]; !ok {
+			byDate[d] = map[string]any{"date": d}
+			order = append(order, d)
+		}
+		byDate[d][p] = q
+	}
+	if len(order) > days {
+		order = order[:days]
+	}
+	var out []map[string]any
+	for _, d := range order {
+		out = append(out, byDate[d])
+	}
+	return out, nil
+}
+
+// PendingDeliveries lists deliveries needing work.
+func (s *Store) PendingDeliveries() ([]struct {
+	EventID, NotifierID string
+	Attempts            int
+}, error) {
+	rows, err := s.db.Query(`SELECT event_id, notifier_id, attempts FROM alert_deliveries
+	WHERE state IN ('pending','sending') ORDER BY rowid`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []struct {
+		EventID, NotifierID string
+		Attempts            int
+	}
+	for rows.Next() {
+		var d struct {
+			EventID, NotifierID string
+			Attempts            int
+		}
+		if err := rows.Scan(&d.EventID, &d.NotifierID, &d.Attempts); err != nil {
+			return nil, err
+		}
+		out = append(out, d)
+	}
+	return out, rows.Err()
+}
+
+// GetEvent fetches an alert event row by id.
+func (s *Store) GetEvent(id string) (AlertEvent, bool, error) {
+	var e AlertEvent
+	var ip, mj sql.NullString
+	err := s.db.QueryRow(`SELECT id,event_key,local_date,kind,title,body,image_path,metadata_json,created_utc
+	FROM alert_events WHERE id=?`, id).
+		Scan(&e.ID, &e.EventKey, &e.LocalDate, &e.Kind, &e.Title, &e.Body, &ip, &mj, &e.CreatedUTC)
+	if errors.Is(err, sql.ErrNoRows) {
+		return e, false, nil
+	}
+	if err != nil {
+		return e, false, err
+	}
+	e.ImagePath, e.MetadataJSON = ip.String, mj.String
+	return e, true, nil
+}
+
+// MarkDelivery records a delivery outcome.
+func (s *Store) MarkDelivery(eventID, notifierID, state, lastErr string) error {
+	if lastErr == "" {
+		_, err := s.db.Exec(`UPDATE alert_deliveries SET state=?, attempts=attempts+1,
+		sent_utc=CASE WHEN ?='sent' THEN ? ELSE sent_utc END WHERE event_id=? AND notifier_id=?`,
+			state, state, time.Now().UnixMilli(), eventID, notifierID)
+		return err
+	}
+	_, err := s.db.Exec(`UPDATE alert_deliveries SET state=?, attempts=attempts+1, last_error=?
+	WHERE event_id=? AND notifier_id=?`, state, lastErr, eventID, notifierID)
+	return err
+}
+
+// RecentEvents lists the newest alert events with per-notifier delivery states.
+func (s *Store) RecentEvents(limit int) ([]AlertEvent, error) {
+	rows, err := s.db.Query(`SELECT id,event_key,local_date,kind,title,body,image_path,metadata_json,created_utc
+	FROM alert_events ORDER BY created_utc DESC LIMIT ?`, limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []AlertEvent
+	for rows.Next() {
+		var e AlertEvent
+		var ip, mj sql.NullString
+		if err := rows.Scan(&e.ID, &e.EventKey, &e.LocalDate, &e.Kind, &e.Title, &e.Body, &ip, &mj, &e.CreatedUTC); err != nil {
+			return nil, err
+		}
+		e.ImagePath, e.MetadataJSON = ip.String, mj.String
+		out = append(out, e)
+	}
+	return out, rows.Err()
+}
+
+// DeliveriesForEvent returns the delivery rows of one event.
+func (s *Store) DeliveriesForEvent(eventID string) ([]struct {
+	NotifierID, State, LastErr string
+	Attempts                   int
+}, error) {
+	rows, err := s.db.Query(`SELECT notifier_id,state,COALESCE(last_error,''),attempts
+	FROM alert_deliveries WHERE event_id=?`, eventID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []struct {
+		NotifierID, State, LastErr string
+		Attempts                   int
+	}
+	for rows.Next() {
+		var d struct {
+			NotifierID, State, LastErr string
+			Attempts                   int
+		}
+		if err := rows.Scan(&d.NotifierID, &d.State, &d.LastErr, &d.Attempts); err != nil {
+			return nil, err
+		}
+		out = append(out, d)
+	}
+	return out, rows.Err()
+}
+
+// EnabledNotifierIDs returns the static-def notifiers enabled at runtime.
+// Static defs live in config; DB stores enablement overrides.
+func (s *Store) EnabledNotifierIDs(defs []string) []string {
+	m := map[string]bool{}
+	if ok, _ := s.GetSettingRaw("notifier_enabled", &m); !ok {
+		m = nil
+	}
+	var out []string
+	for _, id := range defs {
+		if m == nil || m[id] {
+			out = append(out, id)
+		}
+	}
+	return out
+}
+
+// LatestDays returns completed days newest-first for the gallery.
+func (s *Store) LatestDays(limit, offset int) ([]Day, error) {
+	rows, err := s.db.Query(`SELECT date,status,COALESCE(reason,''),best_score,COALESCE(best_camera_id,''),
+	COALESCE(best_taken_utc,0),COALESCE(best_path,''),COALESCE(thumb480_path,''),COALESCE(thumb240_path,''),COALESCE(completed_utc,0)
+	FROM days WHERE date <= date('now','localtime') ORDER BY date DESC LIMIT ? OFFSET ?`, limit, offset)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []Day
+	for rows.Next() {
+		var d Day
+		var bs sql.NullFloat64
+		if err := rows.Scan(&d.Date, &d.Status, &d.Reason, &bs, &d.BestCameraID, &d.BestTakenUTC,
+			&d.BestPath, &d.Thumb480Path, &d.Thumb240Path, &d.CompletedUTC); err != nil {
+			return nil, err
+		}
+		if bs.Valid {
+			v := bs.Float64
+			d.BestScore = &v
+		}
+		out = append(out, d)
+	}
+	return out, rows.Err()
+}
+
+// CountDays counts gallery rows.
+func (s *Store) CountDays() (int, error) {
+	var n int
+	err := s.db.QueryRow(`SELECT COUNT(*) FROM days WHERE date <= date('now','localtime')`).Scan(&n)
+	return n, err
+}
