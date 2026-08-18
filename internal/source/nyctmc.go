@@ -67,7 +67,6 @@ type NYCTMC struct {
 	dotID string
 	name  string
 	ua    string
-	lim   *Limiter
 	h     *HTTP // shares all httpjpeg hardening; URL is the DOT image endpoint
 }
 

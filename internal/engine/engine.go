@@ -391,8 +391,7 @@ func (e *Engine) FinalizeDay(ctx context.Context, date string) error {
 		cam store.Camera
 		f   store.FrameRow
 	}
-	var best map[string]candidate // per camera
-	best = map[string]candidate{}
+	best := map[string]candidate{} // per camera
 	for _, cam := range cams {
 		frames, err := e.Store.CameraDayFrames(cam.ID, date)
 		if err != nil {

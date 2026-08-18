@@ -4,7 +4,6 @@
 package engine
 
 import (
-	"math"
 	"sort"
 	"time"
 )
@@ -100,6 +99,3 @@ func medianScores(s []Sample) float64 {
 	}
 	return (v[m-1] + v[m]) / 2
 }
-
-// round2 matches the stored 2-dp convention.
-func round2(v float64) float64 { return math.Round(v*100) / 100 }
