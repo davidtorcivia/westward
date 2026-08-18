@@ -50,19 +50,19 @@ func New(st *store.Store, e *engine.Engine, a *engine.AlertManager, auth *server
 var funcs = template.FuncMap{
 	"roiJSON":  func(c store.Camera) string { return rectJSON(c.ROIX, c.ROIY, c.ROIW, c.ROIH) },
 	"cropJSON": func(c store.Camera) string { return rectJSON(c.CropX, c.CropY, c.CropW, c.CropH) },
-	"triggerOf": func(c store.Camera) [4]float64 {
-		v := [4]float64{c.ThresholdAbs, 1.6, 4.0, 1.5}
+	"triggerOf": func(c store.Camera) map[string]float64 {
+		v := map[string]float64{"Threshold": c.ThresholdAbs, "Ratio": 1.6, "Delta": 4.0, "Rise": 1.5}
 		if c.TriggerJSON != "" {
 			var o map[string]float64
 			if json.Unmarshal([]byte(c.TriggerJSON), &o) == nil {
 				if r, ok := o["ratio"]; ok {
-					v[1] = r
+					v["Ratio"] = r
 				}
 				if d, ok := o["delta_abs"]; ok {
-					v[2] = d
+					v["Delta"] = d
 				}
 				if rd, ok := o["rise_delta"]; ok {
-					v[3] = rd
+					v["Rise"] = rd
 				}
 			}
 		}
@@ -194,8 +194,11 @@ func (a *Admin) mapData(w http.ResponseWriter, r *http.Request) {
 }
 
 func (a *Admin) mapPage(w http.ResponseWriter, r *http.Request) {
-	// Non-empty map: {{with .Data}} in the template skips empty maps.
-	a.render(w, r, []string{"map"}, map[string]any{"ok": true})
+	settings, _, _ := a.Store.GetSettings()
+	// Template reads .lat/.lon for the initial map view.
+	a.render(w, r, []string{"map"}, map[string]any{
+		"lat": settings.Lat, "lon": settings.Lon,
+	})
 }
 
 func (a *Admin) notifiers(w http.ResponseWriter, r *http.Request) {
