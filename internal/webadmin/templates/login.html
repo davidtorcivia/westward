@@ -1,0 +1,79 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>westward</title>
+<link rel="icon" href="/favicon.svg" type="image/svg+xml">
+<link rel="stylesheet" href="/static/gallery.css">
+<style>
+  html, body { height: 100%; }
+  body {
+    margin: 0; display: flex; align-items: center; justify-content: center;
+    background:
+      radial-gradient(120% 90% at 50% 108%, #ff9d5c 0%, rgba(255,157,92,0) 55%),
+      radial-gradient(140% 110% at 50% 118%, #e86a5e 0%, rgba(232,106,94,0) 60%),
+      linear-gradient(180deg, #241b3e 0%, #3d2a52 38%, #71406e 62%, #b45e6d 82%, #e8875f 100%);
+    font: 15px/1.5 system-ui, -apple-system, sans-serif;
+  }
+  .card {
+    width: min(380px, 92vw); padding: 36px 34px 30px; border-radius: 18px;
+    background: rgba(20, 14, 32, 0.55); backdrop-filter: blur(14px);
+    border: 1px solid rgba(255, 200, 160, 0.22);
+    box-shadow: 0 24px 60px rgba(10, 5, 24, 0.5);
+    color: #f6ece2;
+  }
+  .mark { width: 84px; height: 84px; margin: 0 auto 6px; display: block; }
+  h1 {
+    text-align: center; font-size: 19px; font-weight: 600; margin: 0 0 2px;
+    letter-spacing: 0.12em; color: #ffd9a8;
+  }
+  .sub { text-align: center; font-size: 12.5px; color: #d9b8a6; margin: 0 0 26px; letter-spacing: 0.05em; }
+  label { display: block; font-size: 12px; color: #d9b8a6; margin: 0 0 6px; letter-spacing: 0.04em; }
+  input {
+    width: 100%; box-sizing: border-box; padding: 11px 13px; margin-bottom: 16px;
+    border-radius: 9px; border: 1px solid rgba(255, 210, 170, 0.25);
+    background: rgba(12, 8, 20, 0.5); color: #f6ece2; font: inherit;
+  }
+  input:focus { outline: 2px solid #ffb37a; border-color: transparent; }
+  button {
+    width: 100%; padding: 11px; border: 0; border-radius: 9px; cursor: pointer;
+    background: linear-gradient(90deg, #f2a65a, #e86a5e);
+    color: #241b3e; font: 700 14px system-ui, sans-serif; letter-spacing: 0.06em;
+  }
+  button:hover { filter: brightness(1.08); }
+  .err {
+    background: rgba(200, 60, 60, 0.18); border: 1px solid rgba(230, 100, 90, 0.4);
+    color: #ffc9c2; border-radius: 8px; padding: 9px 12px; font-size: 13px; margin-bottom: 16px;
+  }
+</style>
+</head>
+<body>
+<div class="card">
+  <svg class="mark" viewBox="0 0 100 100" aria-hidden="true">
+    <defs>
+      <linearGradient id="sky" x1="0" y1="0" x2="0" y2="1">
+        <stop offset="0" stop-color="#3d2a52"/><stop offset="1" stop-color="#e8875f"/>
+      </linearGradient>
+      <linearGradient id="sun" x1="0" y1="0" x2="0" y2="1">
+        <stop offset="0" stop-color="#ffe9b0"/><stop offset="1" stop-color="#ff9d5c"/>
+      </linearGradient>
+    </defs>
+    <rect width="100" height="100" rx="24" fill="url(#sky)"/>
+    <circle cx="50" cy="58" r="16" fill="url(#sun)"/>
+    <path d="M0 66 Q25 60 50 66 T100 66 V78 H0 Z" fill="#241b3e" opacity="0.85"/>
+    <path d="M0 74 Q25 68 50 74 T100 74 V78 H0 Z" fill="#1a1226"/>
+  </svg>
+  <h1>WESTWARD</h1>
+  <p class="sub">sunset watcher</p>
+  {{if .Error}}<div class="err">{{.Error}}</div>{{end}}
+  <form method="post" action="/admin/login">
+    <label for="u">username</label>
+    <input id="u" name="username" autocomplete="username" autofocus required>
+    <label for="p">password</label>
+    <input id="p" name="password" type="password" autocomplete="current-password" required>
+    <button type="submit">sign in</button>
+  </form>
+</div>
+</body>
+</html>

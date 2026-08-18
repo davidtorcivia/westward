@@ -634,28 +634,35 @@ func (e *Engine) fetchForecasts(ctx context.Context, date string, ev solar.Event
 	fetch(cmp, false)
 }
 
-// sendHeadsUp gates the day's heads-up on the selected provider's quality.
+// sendHeadsUp gates on the selected provider, falling back to the other;
+// the message cites every provider we have so both are useful at once.
 func (e *Engine) sendHeadsUp(ctx context.Context, date string, ev solar.Events) {
 	selected := e.settings.Forecast.Provider
+	other := "openmeteo"
+	if selected == "openmeteo" {
+		other = "sunsethue"
+	}
 	obs, ok, err := e.Store.LatestForecastObservation(date, selected)
 	if err != nil {
 		e.Log.Error("heads-up lookup failed", "err", err.Error())
 		return
 	}
-	fallbackNote := ""
+	note := ""
 	if !ok {
-		if selected == "sunsethue" {
-			// provider failed: fall back to openmeteo observation if any
-			obs, ok, _ = e.Store.LatestForecastObservation(date, "openmeteo")
-			fallbackNote = " (sunsethue unavailable; openmeteo fallback)"
-		}
+		obs, ok, _ = e.Store.LatestForecastObservation(date, other)
+		note = " (" + selected + " unavailable; " + other + " fallback)"
 		if !ok {
 			e.Log.Warn("heads-up skipped: no forecast observation", "date", date)
 			return
 		}
 	}
+	detail := obs.Detail + note
+	// Cite the second provider in the body when both ran today.
+	if alt, altOK, _ := e.Store.LatestForecastObservation(date, other); altOK {
+		detail += fmt.Sprintf(" · %s %.0f/100", other, alt.Quality)
+	}
 	if err := e.Alerts.HeadsUp(ctx, date, obs.Quality, e.settings.QualityFloor,
-		ev.Sunset, obs.Detail+fallbackNote, obs.Provider); err != nil {
+		ev.Sunset, detail, obs.Provider); err != nil {
 		e.Log.Error("heads-up failed", "err", err.Error())
 	}
 }

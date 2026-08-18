@@ -8,12 +8,14 @@
       <th>date</th>
       <th>openmeteo</th>
       <th>sunsethue</th>
+      <th>observed color</th>
     </tr>
     {{range .Cmp}}
     <tr>
       <td>{{.date}}</td>
       <td>{{if .openmeteo}}{{printf "%.0f" .openmeteo}}{{else}}-{{end}}</td>
       <td>{{if .sunsethue}}{{printf "%.0f" .sunsethue}}{{else}}-{{end}}</td>
+      <td>{{if .observed}}{{printf "%.1f" .observed}}{{else}}-{{end}}</td>
     </tr>
     {{else}}
     <tr>

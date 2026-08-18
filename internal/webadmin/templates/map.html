@@ -1,0 +1,66 @@
+{{template "head" .}}
+<h1>Map</h1>
+{{with .Data}}
+<section class="card">
+  <div id="map"></div>
+  <p class="hint">
+    Own cameras glow gold; cached DOT cameras are dim markers. Click a DOT
+    marker to add it. <a href="/admin/cameras">camera list</a>
+  </p>
+  <form method="post" action="/admin/dot/refresh" class="inline">
+    <input type="hidden" name="csrf" value="{{$.CSRF}}">
+    <button class="btn sm">refresh DOT list</button>
+  </form>
+</section>
+
+<script src="/admin/static/vendor/leaflet.js"></script>
+<script>
+(function () {
+  var map = L.map("map").setView([40.6782, -73.9442], 11);
+  L.tileLayer("https://tile.openstreetmap.org/{z}/{x}/{y}.png", {
+    maxZoom: 18,
+    attribution: '&copy; OpenStreetMap contributors'
+  }).addTo(map);
+
+  fetch("/admin/map/data").then(function (r) { return r.json(); }).then(function (d) {
+    map.setView([d.home.lat, d.home.lon], 12);
+
+    L.circleMarker([d.home.lat, d.home.lon], {
+      radius: 7, color: "#f5b871", weight: 2, fillOpacity: 0.9, fillColor: "#e8875f"
+    }).addTo(map).bindTooltip("watch location");
+
+    (d.cameras || []).forEach(function (c) {
+      if (c.Lat == null || c.Lon == null) return;
+      L.circleMarker([c.Lat, c.Lon], {
+        radius: 8, color: "#ffd9a8", weight: 2, fillOpacity: 0.95, fillColor: "#ff9d5c"
+      }).addTo(map).bindTooltip(c.Name + " (" + c.Type + ")");
+    });
+
+    (d.dot || []).forEach(function (c) {
+      var m = L.circleMarker([c.Lat, c.Lon], {
+        radius: 3, color: "rgba(210,180,160,0.5)", weight: 1, fillOpacity: c.Online ? 0.55 : 0.15,
+        fillColor: "#c9a08a"
+      }).addTo(map);
+      m.bindTooltip(c.Name + (c.Online ? "" : " (offline)"));
+      m.on("click", function () {
+        if (confirm("Add DOT camera " + c.Name + "?")) {
+          var f = document.createElement("form");
+          f.method = "post"; f.action = "/admin/cameras/save";
+          [["csrf", document.querySelector("input[name=csrf]").value],
+           ["id", ""], ["name", c.Name], ["type", "nyctmc"], ["ref", c.DotID],
+           ["role", "trigger_only"], ["lat", String(c.Lat)], ["lon", String(c.Lon)],
+           ["enabled", "on"], ["publish_eligible", "on"], ["threshold_abs", "12"]
+          ].forEach(function (kv) {
+            var i = document.createElement("input");
+            i.type = "hidden"; i.name = kv[0]; i.value = kv[1];
+            f.appendChild(i);
+          });
+          document.body.appendChild(f); f.submit();
+        }
+      });
+    });
+  });
+})();
+</script>
+{{end}}
+{{template "foot" .}}

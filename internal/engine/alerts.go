@@ -9,6 +9,7 @@ import (
 	"image/jpeg"
 	"log/slog"
 	"os"
+	"sync"
 	"time"
 
 	"github.com/davidtorcivia/westward/internal/config"
@@ -26,9 +27,15 @@ type AlertManager struct {
 	Log       *slog.Logger
 	Notifiers map[string]notify.Notifier
 	IDs       []string // enabled notifier ids in definition order
+
+	mu sync.Mutex
 }
 
-func (m *AlertManager) notifierIDs() []string { return m.IDs }
+func (m *AlertManager) notifierIDs() []string {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return m.IDs
+}
 
 // Emit creates an event + one pending delivery per enabled notifier,
 // atomically, before any network I/O.
@@ -152,6 +159,65 @@ func reEncodeJPEG(b []byte, maxW, quality int) ([]byte, error) {
 	var buf bytes.Buffer
 	jpeg.Encode(&buf, dst, &jpeg.Options{Quality: quality})
 	return buf.Bytes(), nil
+}
+
+// NotifierDef is one runtime-editable notifier configuration (stored in the
+// DB; secrets remain env var NAMES).
+type NotifierDef struct {
+	ID       string `json:"id"`
+	Type     string `json:"type"` // ntfy | pushover | webhook
+	Enabled  bool   `json:"enabled"`
+	Server   string `json:"server,omitempty"`
+	Topic    string `json:"topic,omitempty"`
+	TokenEnv string `json:"token_env,omitempty"`
+	UserEnv  string `json:"user_env,omitempty"`
+	URL      string `json:"url,omitempty"`
+	HMACEnv  string `json:"hmac_env,omitempty"`
+}
+
+// LoadNotifierDefs returns DB defs, falling back to YAML defs on first boot.
+func LoadNotifierDefs(st *store.Store, cfg config.Static) ([]NotifierDef, error) {
+	var defs []NotifierDef
+	ok, err := st.GetSettingRaw("notifiers", &defs)
+	if err != nil {
+		return nil, err
+	}
+	if ok && len(defs) > 0 {
+		return defs, nil
+	}
+	for _, d := range cfg.Notifiers {
+		defs = append(defs, NotifierDef(d))
+	}
+	return defs, nil
+}
+
+// BuildFromDefs instantiates notifiers from runtime defs.
+func BuildFromDefs(defs []NotifierDef) (map[string]notify.Notifier, []string) {
+	out := map[string]notify.Notifier{}
+	var ids []string
+	for _, d := range defs {
+		if !d.Enabled {
+			continue
+		}
+		switch d.Type {
+		case "ntfy":
+			out[d.ID] = &notify.Ntfy{Server: d.Server, Topic: d.Topic, TokenEnv: d.TokenEnv}
+		case "pushover":
+			out[d.ID] = &notify.Pushover{TokenEnv: d.TokenEnv, UserEnv: d.UserEnv, Encode: reEncodeJPEG}
+		case "webhook":
+			out[d.ID] = &notify.Webhook{URL: d.URL, HMACEnv: d.HMACEnv}
+		}
+		ids = append(ids, d.ID)
+	}
+	return out, ids
+}
+
+// Reload rebuilds the notifier set (called after admin edits).
+func (m *AlertManager) Reload(defs []NotifierDef) {
+	notifiers, ids := BuildFromDefs(defs)
+	m.mu.Lock()
+	m.Notifiers, m.IDs = notifiers, ids
+	m.mu.Unlock()
 }
 
 // BuildNotifiers instantiates notifiers from config defs + runtime enablement.

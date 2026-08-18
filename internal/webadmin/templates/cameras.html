@@ -52,6 +52,11 @@
           </select>
         </label>
         <label>Attribution <input name="attribution" value="{{.Attribution}}"></label>
+        <div class="nrow">
+          <label>Lat <input name="lat" type="number" step="0.0001" value="{{if .Lat}}{{.Lat}}{{end}}" placeholder="40.678"></label>
+          <label>Lon <input name="lon" type="number" step="0.0001" value="{{if .Lon}}{{.Lon}}{{end}}" placeholder="-73.944"></label>
+          {{if .Lat}}<a class="maplink" href="/admin/map">map ↗</a>{{end}}
+        </div>
         <label>Publish priority <input name="publish_priority" type="number" value="{{.PublishPriority}}"></label>
         <label class="chk">
           <input type="checkbox" name="enabled" {{if .Enabled}}checked{{end}}> enabled
@@ -74,11 +79,14 @@
 
       <div class="camright">
         <div class="preview" data-cam="{{.ID}}">
-          <img class="pv" data-cam="{{.ID}}" alt="camera preview">
+          <img class="pv" data-cam="{{.ID}}" loading="lazy"
+            {{if .Lat}}{{if .Lon}}data-geo="{{.Lat}},{{.Lon}}"{{end}}{{end}}
+            src="/admin/cameras/shot/{{.ID}}" alt="{{.Name}} preview"
+            onerror="this.classList.add('failed');this.removeAttribute('src');">
           <canvas class="roi" data-cam="{{.ID}}" width="640" height="360"></canvas>
           <p class="roi-readout" data-cam="{{.ID}}"></p>
           <div class="pvbtns">
-            <button type="button" class="btn sm" data-act="preview" data-cam="{{.ID}}">preview</button>
+            <button type="button" class="btn sm" data-act="preview" data-cam="{{.ID}}">refresh</button>
             <button type="button" class="btn sm" data-act="match" data-cam="{{.ID}}">crop ← ROI</button>
             <button type="button" class="btn sm ghost" data-act="clear-roi" data-cam="{{.ID}}">clear ROI</button>
             <button type="button" class="btn sm ghost" data-act="clear-crop" data-cam="{{.ID}}">clear crop</button>

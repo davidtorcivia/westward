@@ -6,7 +6,8 @@
     return el ? el.value : "";
   }
 
-  // Camera preview: POST id -> image blob (needs multipart-less form body).
+  // Camera preview: images load via GET /admin/cameras/shot/{id} (session
+  // cookie auth); refresh re-points the src with a cache buster.
   document.addEventListener("click", (e) => {
     var btn = e.target.closest("[data-act='preview']");
     if (!btn) return;
@@ -14,25 +15,13 @@
     var img = document.querySelector("img.pv[data-cam='" + id + "']");
     if (!img) return;
     btn.disabled = true;
-    fetch("/admin/cameras/preview", {
-      method: "POST",
-      headers: { "Content-Type": "application/x-www-form-urlencoded" },
-      body:
-        "csrf=" + encodeURIComponent(csrf()) + "&id=" + encodeURIComponent(id),
-    })
-      .then((r) => {
-        if (!r.ok) throw new Error("status " + r.status);
-        return r.blob();
-      })
-      .then((b) => {
-        img.src = URL.createObjectURL(b);
-      })
-      .catch((err) => {
-        alert("preview failed: " + err.message);
-      })
-      .finally(() => {
-        btn.disabled = false;
-      });
+    img.classList.remove("failed");
+    img.src = "/admin/cameras/shot/" + encodeURIComponent(id) + "?v=" + Date.now();
+    var done = () => {
+      btn.disabled = false;
+    };
+    img.onload = done;
+    img.onerror = done;
   });
 
   // ROI/crop editor: one canvas per camera, two rectangles.

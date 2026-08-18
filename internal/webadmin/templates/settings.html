@@ -37,5 +37,16 @@
   <button class="btn">save settings</button>
 </form>
 </section>
+
+<section class="card">
+  <h2>Admin password</h2>
+  <p class="hint">12+ characters. Stored as scrypt in the database · supersedes the env bootstrap password immediately.</p>
+  <form method="post" action="/admin/password" class="gridform">
+    <input type="hidden" name="csrf" value="{{$.CSRF}}">
+    <label>Current password <input name="current" type="password" required autocomplete="current-password"></label>
+    <label>New password <input name="next" type="password" required minlength="12" autocomplete="new-password"></label>
+    <button class="btn">change password</button>
+  </form>
+</section>
 {{end}}
 {{template "foot" .}}

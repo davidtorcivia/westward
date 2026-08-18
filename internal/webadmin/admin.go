@@ -3,19 +3,25 @@
 package webadmin
 
 import (
+	"context"
 	"embed"
 	"encoding/json"
 	"html/template"
 	"io/fs"
+	"log/slog"
+	"net"
 	"net/http"
 	"net/url"
 	"strconv"
 	"strings"
 	"time"
 
+	"github.com/davidtorcivia/westward/internal/config"
 	"github.com/davidtorcivia/westward/internal/engine"
 	"github.com/davidtorcivia/westward/internal/server"
+	"github.com/davidtorcivia/westward/internal/source"
 	"github.com/davidtorcivia/westward/internal/store"
+	"github.com/davidtorcivia/westward/internal/ulid"
 )
 
 //go:embed templates/*.html static/*
@@ -25,14 +31,19 @@ type Admin struct {
 	Store  *store.Store
 	Engine *engine.Engine
 	Alerts *engine.AlertManager
+	Auth   *server.Auth
+	Log    *slog.Logger
 	// Preview fetches one frame from a camera (nil = disabled).
 	Preview func(cam store.Camera) ([]byte, int, int, error)
 	// SunsetToday returns today's solar events (nil = not computed).
 	SunsetToday func() (time.Time, time.Time, bool)
 }
 
-func New(st *store.Store, e *engine.Engine, a *engine.AlertManager) (*Admin, error) {
-	ad := &Admin{Store: st, Engine: e, Alerts: a}
+func New(st *store.Store, e *engine.Engine, a *engine.AlertManager, auth *server.Auth, log *slog.Logger) (*Admin, error) {
+	if log == nil {
+		log = slog.Default()
+	}
+	ad := &Admin{Store: st, Engine: e, Alerts: a, Auth: auth, Log: log}
 	return ad, nil
 }
 
@@ -95,6 +106,12 @@ func a_log(*http.Request, string) {}
 
 // Register wires all admin routes onto the server's guarded admin mux.
 func (a *Admin) Register(s *server.Server) {
+	// Public (unauthenticated) auth routes.
+	s.Mux.HandleFunc("GET /admin/login", a.LoginHandler())
+	s.Mux.HandleFunc("POST /admin/login", a.LoginHandler())
+
+	s.Admin("POST /admin/logout", a.LogoutHandler())
+	s.Admin("POST /admin/password", a.passwordChange)
 	s.Admin("GET /admin", a.dashboard)
 	s.Admin("GET /admin/cameras", a.cameras)
 	s.Admin("POST /admin/cameras/save", a.cameraSave)
@@ -111,6 +128,136 @@ func (a *Admin) Register(s *server.Server) {
 	s.Admin("GET /admin/static/", func(w http.ResponseWriter, r *http.Request) {
 		staticHandler.ServeHTTP(w, r)
 	})
+	s.Admin("GET /admin/map", a.mapPage)
+	s.Admin("GET /admin/map/data", a.mapData)
+	s.Admin("POST /admin/dot/refresh", a.dotRefresh)
+	s.Admin("GET /admin/notifiers", a.notifiers)
+	s.Admin("POST /admin/notifiers/save", a.notifierSave)
+	s.Admin("POST /admin/notifiers/delete", a.notifierDelete)
+	s.Admin("GET /admin/cameras/shot/{id}", a.cameraShot)
+}
+
+// cameraShot serves a preview JPEG as an <img> target (GET, session-auth).
+func (a *Admin) cameraShot(w http.ResponseWriter, r *http.Request) {
+	if a.Preview == nil {
+		http.Error(w, "preview unavailable", http.StatusServiceUnavailable)
+		return
+	}
+	cam, err := a.Store.GetCamera(r.PathValue("id"))
+	if err != nil {
+		http.NotFound(w, r)
+		return
+	}
+	jpegBytes, _, _, err := a.Preview(cam)
+	if err != nil {
+		http.Error(w, "fetch failed", http.StatusBadGateway)
+		return
+	}
+	w.Header().Set("Content-Type", "image/jpeg")
+	w.Header().Set("Cache-Control", "no-store")
+	w.Write(jpegBytes)
+}
+
+// dotRefresh pulls the DOT camera list into the cache.
+func (a *Admin) dotRefresh(w http.ResponseWriter, r *http.Request) {
+	ctx, cancel := context.WithTimeout(r.Context(), 20*time.Second)
+	defer cancel()
+	list, err := source.FetchNYCTMCList(ctx, source.NYCTMCBase, source.NYCTMCUserAgent)
+	if err != nil {
+		http.Error(w, "DOT list fetch failed: "+err.Error(), http.StatusBadGateway)
+		return
+	}
+	var entries []store.NYCTMCCacheEntry
+	for _, c := range list {
+		entries = append(entries, store.NYCTMCCacheEntry{
+			DotID: c.ID, Name: c.Name, Lat: c.Latitude, Lon: c.Longitude,
+			Online: c.IsOnline == "true",
+		})
+	}
+	if err := a.Store.UpsertNYCTMCList(entries); err != nil {
+		http.Error(w, "store failed: "+err.Error(), http.StatusInternalServerError)
+		return
+	}
+	http.Redirect(w, r, "/admin/map", http.StatusSeeOther)
+}
+
+// mapData returns cameras + nearest cached DOT cameras as JSON.
+func (a *Admin) mapData(w http.ResponseWriter, r *http.Request) {
+	settings, _, _ := a.Store.GetSettings()
+	cams, _ := a.Store.ListCameras()
+	dot, _ := a.Store.ListNYCTMCNearest(settings.Lat, settings.Lon, 2000)
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]any{
+		"home":    map[string]float64{"lat": settings.Lat, "lon": settings.Lon},
+		"cameras": cams, "dot": dot,
+	})
+}
+
+func (a *Admin) mapPage(w http.ResponseWriter, r *http.Request) {
+	// Non-empty map: {{with .Data}} in the template skips empty maps.
+	a.render(w, r, []string{"map"}, map[string]any{"ok": true})
+}
+
+func (a *Admin) notifiers(w http.ResponseWriter, r *http.Request) {
+	defs, _ := engine.LoadNotifierDefs(a.Store, config.Static{})
+	a.render(w, r, []string{"notifiers"}, map[string]any{"Defs": defs, "Saved": r.URL.Query().Get("saved")})
+}
+
+func (a *Admin) notifierSave(w http.ResponseWriter, r *http.Request) {
+	f := r.PostForm
+	defs, _ := engine.LoadNotifierDefs(a.Store, config.Static{})
+	id := f.Get("id")
+	d := engine.NotifierDef{
+		ID: id, Type: f.Get("type"), Enabled: f.Get("enabled") == "on",
+		Server: strings.TrimSpace(f.Get("server")), Topic: strings.TrimSpace(f.Get("topic")),
+		TokenEnv: strings.TrimSpace(f.Get("token_env")), UserEnv: strings.TrimSpace(f.Get("user_env")),
+		URL: strings.TrimSpace(f.Get("url")), HMACEnv: strings.TrimSpace(f.Get("hmac_env")),
+	}
+	if d.ID == "" {
+		d.ID = ulid.New(time.Now())
+	}
+	switch d.Type {
+	case "ntfy", "pushover", "webhook":
+	default:
+		http.Error(w, "unknown type", http.StatusBadRequest)
+		return
+	}
+	replaced := false
+	for i := range defs {
+		if defs[i].ID == d.ID {
+			defs[i] = d
+			replaced = true
+		}
+	}
+	if !replaced {
+		defs = append(defs, d)
+	}
+	if err := a.Store.SetSettingRaw("notifiers", defs); err != nil {
+		http.Error(w, "store: "+err.Error(), http.StatusInternalServerError)
+		return
+	}
+	a.reloadNotifiers(defs)
+	http.Redirect(w, r, "/admin/notifiers?saved=1", http.StatusSeeOther)
+}
+
+func (a *Admin) notifierDelete(w http.ResponseWriter, r *http.Request) {
+	id := r.PostFormValue("id")
+	defs, _ := engine.LoadNotifierDefs(a.Store, config.Static{})
+	var out []engine.NotifierDef
+	for _, d := range defs {
+		if d.ID != id {
+			out = append(out, d)
+		}
+	}
+	a.Store.SetSettingRaw("notifiers", out)
+	a.reloadNotifiers(out)
+	http.Redirect(w, r, "/admin/notifiers", http.StatusSeeOther)
+}
+
+func (a *Admin) reloadNotifiers(defs []engine.NotifierDef) {
+	if a.Alerts != nil {
+		a.Alerts.Reload(defs)
+	}
 }
 
 func mustSub() fs.FS {
@@ -180,6 +327,24 @@ func (a *Admin) cameraSave(w http.ResponseWriter, r *http.Request) {
 		var c [4]float64
 		if err := json.Unmarshal([]byte(s), &c); err == nil {
 			cam.CropX, cam.CropY, cam.CropW, cam.CropH = &c[0], &c[1], &c[2], &c[3]
+		}
+	}
+	if v := floatPtr(f.Get("lat")); v != nil {
+		cam.Lat = v
+	}
+	if v := floatPtr(f.Get("lon")); v != nil {
+		cam.Lon = v
+	}
+	// nyctmc: coordinates from the DOT cache when present (map picker sends them).
+	if cam.Type == "nyctmc" && (cam.Lat == nil || cam.Lon == nil) {
+		if entries, err := a.Store.ListNYCTMCNearest(40.6782, -73.9442, 2000); err == nil {
+			for _, e := range entries {
+				if e.DotID == cam.Ref {
+					lat, lon := e.Lat, e.Lon
+					cam.Lat, cam.Lon = &lat, &lon
+					break
+				}
+			}
 		}
 	}
 	if tj := triggerJSON(f); tj != "" {
@@ -346,6 +511,16 @@ func valueOr(v, def string) string {
 	return v
 }
 
+func floatPtr(s string) *float64 {
+	if s == "" {
+		return nil
+	}
+	if v, err := strconv.ParseFloat(s, 64); err == nil {
+		return &v
+	}
+	return nil
+}
+
 func floatOf(s string, def float64) float64 {
 	if v, err := strconv.ParseFloat(s, 64); err == nil {
 		return v
@@ -358,4 +533,94 @@ func intOf(s string, def int) int {
 		return v
 	}
 	return def
+}
+
+// LoginHandler serves the login page (GET) and verifies credentials (POST).
+// Unauthenticated by design; rate-limited via the shared Auth limiter.
+func (a *Admin) LoginHandler() http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodPost {
+			ip, _, _ := net.SplitHostPort(r.RemoteAddr)
+			if a.Auth.TooManyFailures(ip) {
+				http.Error(w, "too many attempts, wait a minute", http.StatusTooManyRequests)
+				return
+			}
+			if err := r.ParseForm(); err != nil {
+				http.Error(w, "bad form", http.StatusBadRequest)
+				return
+			}
+			if !a.Auth.Check(r.PostFormValue("username"), r.PostFormValue("password")) {
+				a.Auth.RecordFailure(ip)
+				a.renderLogin(w, "wrong username or password")
+				return
+			}
+			tok := a.Auth.Sessions.Create()
+			http.SetCookie(w, &http.Cookie{
+				Name: "westward_session", Value: tok, Path: "/admin",
+				MaxAge: 86400, HttpOnly: true, SameSite: http.SameSiteLaxMode,
+			})
+			http.Redirect(w, r, "/admin", http.StatusSeeOther)
+			return
+		}
+		a.renderLogin(w, "")
+	}
+}
+
+func (a *Admin) renderLogin(w http.ResponseWriter, errMsg string) {
+	t, err := template.ParseFS(content, "templates/login.html")
+	if err != nil {
+		http.Error(w, "template: "+err.Error(), http.StatusInternalServerError)
+		return
+	}
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	w.Header().Set("Cache-Control", "no-store")
+	t.Execute(w, map[string]any{"Error": errMsg})
+}
+
+// LogoutHandler revokes the session.
+func (a *Admin) LogoutHandler() http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		if c, err := r.Cookie("westward_session"); err == nil {
+			a.Auth.Sessions.Revoke(c.Value)
+		}
+		http.SetCookie(w, &http.Cookie{Name: "westward_session", Value: "", Path: "/admin", MaxAge: -1})
+		http.Redirect(w, r, "/admin/login", http.StatusSeeOther)
+	}
+}
+
+// passwordChange stores the new scrypt hash in DB settings, superseding the
+// env bootstrap password from the next check onward.
+func (a *Admin) passwordChange(w http.ResponseWriter, r *http.Request) {
+	f := r.PostForm
+	cur, next := f.Get("current"), f.Get("next")
+	if len(next) < 12 {
+		http.Error(w, "new password must be at least 12 characters", http.StatusBadRequest)
+		return
+	}
+	if !a.Auth.Check(a.Auth.User, cur) {
+		http.Error(w, "current password wrong", http.StatusForbidden)
+		return
+	}
+	hash, err := server.HashPassword(next)
+	if err != nil {
+		http.Error(w, "hash: "+err.Error(), http.StatusInternalServerError)
+		return
+	}
+	if err := a.Store.SetSettingRaw("admin_pw", hash); err != nil {
+		http.Error(w, "store: "+err.Error(), http.StatusInternalServerError)
+		return
+	}
+	a.HookAuth() // rebind Verify immediately
+	a.Log.Info("admin password changed")
+	http.Redirect(w, r, "/admin/settings?saved=password", http.StatusSeeOther)
+}
+
+// hookAuth binds Auth.Verify to the DB-stored scrypt hash when present.
+func (a *Admin) HookAuth() {
+	stored := ""
+	if ok, _ := a.Store.GetSettingRaw("admin_pw", &stored); ok && stored != "" {
+		a.Auth.Verify = func(pw string) bool { return server.VerifyPassword(pw, stored) }
+	} else {
+		a.Auth.Verify = nil
+	}
 }

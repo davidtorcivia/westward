@@ -19,31 +19,49 @@ import (
 )
 
 const (
-	maxBodyBytes = 1 << 20 // 1 MiB admin mutation cap
-	csrfCookie   = "westward_csrf"
+	maxBodyBytes  = 1 << 20 // 1 MiB admin mutation cap
+	csrfCookie    = "westward_csrf"
+	sessionCookie = "westward_session"
 )
 
 // Auth holds admin credentials and the auth-failure rate limiter.
+// Verify is pluggable: the DB scrypt hash when set, else the env bootstrap
+// digest. Session cookies are accepted alongside Basic Auth.
 type Auth struct {
 	User     string
-	PWDigest [32]byte // sha256 of the password
+	PWDigest [32]byte                   // sha256 of the env bootstrap password
+	Verify   func(password string) bool // supersedes PWDigest when set
+	Sessions *SessionStore
 
 	mu    sync.Mutex
 	fails map[string][]time.Time // ip -> recent failure timestamps
 }
 
 func NewAuth(user, password string) *Auth {
-	a := &Auth{User: user, fails: map[string][]time.Time{}}
+	a := &Auth{User: user, fails: map[string][]time.Time{}, Sessions: NewSessionStore(24 * time.Hour)}
 	a.PWDigest = sha256.Sum256([]byte(password))
 	return a
 }
 
 // Check reports whether user/password are valid. Constant-time on both paths.
 func (a *Auth) Check(user, password string) bool {
-	d := sha256.Sum256([]byte(password))
 	userOK := subtle.ConstantTimeCompare([]byte(user), []byte(a.User)) == 1
-	pwOK := subtle.ConstantTimeCompare(d[:], a.PWDigest[:]) == 1
+	var pwOK bool
+	if a.Verify != nil {
+		pwOK = a.Verify(password)
+	} else {
+		d := sha256.Sum256([]byte(password))
+		pwOK = subtle.ConstantTimeCompare(d[:], a.PWDigest[:]) == 1
+	}
 	return userOK && pwOK
+}
+
+// HasSession reports a valid admin session cookie.
+func (a *Auth) HasSession(r *http.Request) bool {
+	if c, err := r.Cookie(sessionCookie); err == nil {
+		return a.Sessions.Valid(c.Value)
+	}
+	return false
 }
 
 // RecordFailure notes an auth failure for ip; TooManyFailures reports whether
@@ -111,9 +129,20 @@ func New(auth *Auth, log *slog.Logger, hb *health.Heartbeat) *Server {
 func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("X-Content-Type-Options", "nosniff")
 	w.Header().Set("X-Frame-Options", "DENY")
-	w.Header().Set("Content-Security-Policy",
-		"default-src 'none'; img-src 'self'; style-src 'self'; script-src 'self'")
+	csp := "default-src 'none'; img-src 'self'; style-src 'self'; script-src 'self'"
+	// Admin map tiles come from OSM; everything else stays strict.
+	if strings.HasPrefix(r.URL.Path, "/admin") {
+		csp = "default-src 'none'; img-src 'self' https://tile.openstreetmap.org; " +
+			"style-src 'self'; script-src 'self'; connect-src 'self'"
+	}
+	w.Header().Set("Content-Security-Policy", csp)
 	s.Mux.ServeHTTP(w, r)
+}
+
+// wantsHTML: browser GET navigations get the login page; curl gets 401.
+func wantsHTML(r *http.Request) bool {
+	return strings.Contains(r.Header.Get("Accept"), "text/html") &&
+		r.Method == http.MethodGet && !strings.HasPrefix(r.URL.Path, "/admin/static")
 }
 
 // Admin wraps an admin handler with auth, CSRF, and no-store semantics.
@@ -131,12 +160,19 @@ func (s *Server) adminGuard(h http.HandlerFunc) http.Handler {
 			http.Error(w, "too many attempts", http.StatusTooManyRequests)
 			return
 		}
-		user, pass, ok := r.BasicAuth()
-		if !ok || !s.Auth.Check(user, pass) {
-			s.Auth.RecordFailure(ip)
-			w.Header().Set("WWW-Authenticate", `Basic realm="westward admin"`)
-			http.Error(w, "unauthorized", http.StatusUnauthorized)
-			return
+		if !s.Auth.HasSession(r) {
+			user, pass, ok := r.BasicAuth()
+			if !ok || !s.Auth.Check(user, pass) {
+				s.Auth.RecordFailure(ip)
+				// Browser navigations get the login page; API/curl gets 401.
+				if wantsHTML(r) {
+					http.Redirect(w, r, "/admin/login", http.StatusSeeOther)
+					return
+				}
+				w.Header().Set("WWW-Authenticate", `Basic realm="westward admin"`)
+				http.Error(w, "unauthorized", http.StatusUnauthorized)
+				return
+			}
 		}
 		if r.Method != http.MethodGet && r.Method != http.MethodHead {
 			r.Body = http.MaxBytesReader(w, r.Body, maxBodyBytes)

@@ -1,6 +1,7 @@
 package server
 
 import (
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -11,6 +12,29 @@ import (
 
 func testServer() (*Server, *httptest.Server) {
 	s := New(NewAuth("admin", "a-12-char-password"), nil, newHeartbeat())
+	// Minimal login route mirroring webadmin's wiring (rendering lives there).
+	s.Mux.HandleFunc("POST /admin/login", func(w http.ResponseWriter, r *http.Request) {
+		ip, _, _ := net.SplitHostPort(r.RemoteAddr)
+		if s.Auth.TooManyFailures(ip) {
+			http.Error(w, "slow down", http.StatusTooManyRequests)
+			return
+		}
+		r.ParseForm()
+		if !s.Auth.Check(r.PostFormValue("username"), r.PostFormValue("password")) {
+			s.Auth.RecordFailure(ip)
+			w.WriteHeader(http.StatusOK)
+			w.Write([]byte("login form with error"))
+			return
+		}
+		http.SetCookie(w, &http.Cookie{
+			Name: "westward_session", Value: s.Auth.Sessions.Create(),
+			Path: "/admin", MaxAge: 86400, HttpOnly: true, SameSite: http.SameSiteLaxMode,
+		})
+		http.Redirect(w, r, "/admin", http.StatusSeeOther)
+	})
+	s.Mux.HandleFunc("GET /admin/login", func(w http.ResponseWriter, r *http.Request) {
+		w.Write([]byte("login form"))
+	})
 	s.Admin("GET /admin", func(w http.ResponseWriter, r *http.Request) {
 		EnsureCSRFCookie(w, r)
 		w.Write([]byte("admin ok"))
@@ -215,5 +239,110 @@ func TestMethodRestrictions(t *testing.T) {
 	resp.Body.Close()
 	if resp.StatusCode != http.StatusMethodNotAllowed {
 		t.Errorf("POST to GET-only route: %d, want 405", resp.StatusCode)
+	}
+}
+
+func TestLoginSessionFlow(t *testing.T) {
+	s, ts := testServer()
+	defer ts.Close()
+
+	client := &http.Client{CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }}
+
+	// GET login page unauthenticated.
+	resp, err := client.Get(ts.URL + "/admin/login")
+	if err != nil {
+		t.Fatal(err)
+	}
+	resp.Body.Close()
+	if resp.StatusCode != 200 {
+		t.Fatalf("login page = %d", resp.StatusCode)
+	}
+
+	// POST wrong password: no session cookie.
+	resp, err = client.PostForm(ts.URL+"/admin/login", map[string][]string{
+		"username": {"admin"}, "password": {"wrong-wrong-wrong"},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	resp.Body.Close()
+	if resp.StatusCode != 200 { // renders the form again with the error
+		t.Fatalf("wrong password = %d", resp.StatusCode)
+	}
+
+	// POST correct: session cookie issued, admin accessible without Basic Auth.
+	resp, err = client.PostForm(ts.URL+"/admin/login", map[string][]string{
+		"username": {"admin"}, "password": {"a-12-char-password"},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	resp.Body.Close()
+	var tok string
+	for _, c := range resp.Cookies() {
+		if c.Name == "westward_session" {
+			tok = c.Value
+		}
+	}
+	if tok == "" {
+		t.Fatal("no session cookie")
+	}
+	req, _ := http.NewRequest("GET", ts.URL+"/admin", nil)
+	req.AddCookie(&http.Cookie{Name: "westward_session", Value: tok})
+	resp, err = client.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	resp.Body.Close()
+	if resp.StatusCode != 200 {
+		t.Fatalf("session admin access = %d", resp.StatusCode)
+	}
+
+	// Revoke: logout kills it.
+	s.Auth.Sessions.Revoke(tok)
+	req, _ = http.NewRequest("GET", ts.URL+"/admin", nil)
+	req.AddCookie(&http.Cookie{Name: "westward_session", Value: tok})
+	resp, err = client.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	resp.Body.Close()
+	if resp.StatusCode != 401 {
+		t.Fatalf("revoked session = %d, want 401 (curl path)", resp.StatusCode)
+	}
+}
+
+func TestHashVerifyPassword(t *testing.T) {
+	h, err := HashPassword("correct horse battery staple")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !VerifyPassword("correct horse battery staple", h) {
+		t.Fatal("valid password rejected")
+	}
+	if VerifyPassword("wrong horse battery staple", h) {
+		t.Fatal("wrong password accepted")
+	}
+	if VerifyPassword("pw", "not-a-valid-hash") {
+		t.Fatal("malformed hash accepted")
+	}
+}
+
+func TestBrowserRedirectToLogin(t *testing.T) {
+	_, ts := testServer()
+	defer ts.Close()
+	client := &http.Client{CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }}
+	req, _ := http.NewRequest("GET", ts.URL+"/admin", nil)
+	req.Header.Set("Accept", "text/html,application/xhtml+xml")
+	resp, err := client.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	resp.Body.Close()
+	if resp.StatusCode != http.StatusSeeOther {
+		t.Fatalf("browser /admin = %d, want 303 to login", resp.StatusCode)
+	}
+	if loc := resp.Header.Get("Location"); loc != "/admin/login" {
+		t.Fatalf("location = %q", loc)
 	}
 }

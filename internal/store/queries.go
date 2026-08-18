@@ -22,6 +22,7 @@ type Camera struct {
 	Attribution                string
 	ROIX, ROIY, ROIW, ROIH     *float64
 	CropX, CropY, CropW, CropH *float64
+	Lat, Lon                   *float64
 	ThresholdAbs               float64
 	TriggerJSON                string // overrides {"ratio","delta_abs","rise_delta"}
 	CredentialRef              string
@@ -34,17 +35,19 @@ type Camera struct {
 
 const cameraCols = `id,name,type,ref,enabled,role,publish_priority,publish_eligible,attribution,
 roi_x,roi_y,roi_w,roi_h,publish_crop_x,publish_crop_y,publish_crop_w,publish_crop_h,
-threshold_abs,trigger_json,credential_ref,headers_json,state,stale_streak,created_utc,updated_utc`
+threshold_abs,trigger_json,credential_ref,headers_json,state,stale_streak,created_utc,updated_utc,
+lat,lon`
 
 func scanCamera(row interface{ Scan(...any) error }) (Camera, error) {
 	var c Camera
 	var roiX, roiY, roiW, roiH sql.NullFloat64
 	var cx, cy, cw, ch sql.NullFloat64
+	var la, lo sql.NullFloat64
 	var attr, trig, cred, hdr sql.NullString
 	err := row.Scan(&c.ID, &c.Name, &c.Type, &c.Ref, &c.Enabled, &c.Role, &c.PublishPriority,
 		&c.PublishEligible, &attr, &roiX, &roiY, &roiW, &roiH, &cx, &cy, &cw, &ch,
 		&c.ThresholdAbs, &trig, &cred, &hdr,
-		&c.State, &c.StaleStreak, &c.CreatedUTC, &c.UpdatedUTC)
+		&c.State, &c.StaleStreak, &c.CreatedUTC, &c.UpdatedUTC, &la, &lo)
 	if err != nil {
 		return c, err
 	}
@@ -57,6 +60,7 @@ func scanCamera(row interface{ Scan(...any) error }) (Camera, error) {
 	}
 	c.ROIX, c.ROIY, c.ROIW, c.ROIH = f(roiX), f(roiY), f(roiW), f(roiH)
 	c.CropX, c.CropY, c.CropW, c.CropH = f(cx), f(cy), f(cw), f(ch)
+	c.Lat, c.Lon = f(la), f(lo)
 	c.Attribution, c.TriggerJSON, c.CredentialRef, c.HeadersJSON = attr.String, trig.String, cred.String, hdr.String
 	return c, nil
 }
@@ -94,12 +98,12 @@ func (s *Store) InsertCamera(c *Camera) error {
 	}
 	now := time.Now().UnixMilli()
 	c.CreatedUTC, c.UpdatedUTC = now, now
-	_, err := s.db.Exec(`INSERT INTO cameras(`+cameraCols+`) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+	_, err := s.db.Exec(`INSERT INTO cameras(`+cameraCols+`) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
 		c.ID, c.Name, c.Type, c.Ref, c.Enabled, c.Role, c.PublishPriority, c.PublishEligible,
 		nullStr(c.Attribution), nullF(c.ROIX), nullF(c.ROIY), nullF(c.ROIW), nullF(c.ROIH),
 		nullF(c.CropX), nullF(c.CropY), nullF(c.CropW), nullF(c.CropH),
 		c.ThresholdAbs, nullStr(c.TriggerJSON), nullStr(c.CredentialRef), nullStr(c.HeadersJSON),
-		c.State, c.StaleStreak, c.CreatedUTC, c.UpdatedUTC)
+		c.State, c.StaleStreak, c.CreatedUTC, c.UpdatedUTC, nullF(c.Lat), nullF(c.Lon))
 	return err
 }
 
@@ -109,12 +113,12 @@ func (s *Store) UpdateCamera(c *Camera) error {
 	publish_eligible=?,attribution=?,roi_x=?,roi_y=?,roi_w=?,roi_h=?,
 	publish_crop_x=?,publish_crop_y=?,publish_crop_w=?,publish_crop_h=?,
 	threshold_abs=?,trigger_json=?,
-	credential_ref=?,headers_json=?,state=?,stale_streak=?,updated_utc=? WHERE id=?`,
+	credential_ref=?,headers_json=?,state=?,stale_streak=?,updated_utc=?,lat=?,lon=? WHERE id=?`,
 		c.Name, c.Type, c.Ref, c.Enabled, c.Role, c.PublishPriority, c.PublishEligible,
 		nullStr(c.Attribution), nullF(c.ROIX), nullF(c.ROIY), nullF(c.ROIW), nullF(c.ROIH),
 		nullF(c.CropX), nullF(c.CropY), nullF(c.CropW), nullF(c.CropH),
 		c.ThresholdAbs, nullStr(c.TriggerJSON), nullStr(c.CredentialRef), nullStr(c.HeadersJSON),
-		c.State, c.StaleStreak, c.UpdatedUTC, c.ID)
+		c.State, c.StaleStreak, c.UpdatedUTC, nullF(c.Lat), nullF(c.Lon), c.ID)
 	return err
 }
 
@@ -656,7 +660,12 @@ func (s *Store) ForecastComparison(days int) ([]map[string]any, error) {
 	}
 	var out []map[string]any
 	for _, d := range order {
-		out = append(out, byDate[d])
+		row := byDate[d]
+		var bs sql.NullFloat64
+		if err := s.db.QueryRow(`SELECT best_score FROM days WHERE date=?`, d).Scan(&bs); err == nil && bs.Valid {
+			row["observed"] = bs.Float64
+		}
+		out = append(out, row)
 	}
 	return out, nil
 }
@@ -815,4 +824,52 @@ func (s *Store) CountDays() (int, error) {
 	var n int
 	err := s.db.QueryRow(`SELECT COUNT(*) FROM days WHERE date <= date('now','localtime')`).Scan(&n)
 	return n, err
+}
+
+// NYCTMCCacheEntry is one cached DOT camera.
+type NYCTMCCacheEntry struct {
+	DotID    string
+	Name     string
+	Lat, Lon float64
+	Online   bool
+}
+
+// UpsertNYCTMCList replaces the cached DOT camera list.
+func (s *Store) UpsertNYCTMCList(entries []NYCTMCCacheEntry) error {
+	tx, err := s.db.Begin()
+	if err != nil {
+		return err
+	}
+	tx.Exec(`DELETE FROM nyctmc_cameras`)
+	now := time.Now().UnixMilli()
+	for _, e := range entries {
+		if _, err := tx.Exec(`INSERT OR REPLACE INTO nyctmc_cameras(dot_id,name,lat,lon,online,refreshed_utc)
+			VALUES(?,?,?,?,?,?)`, e.DotID, e.Name, e.Lat, e.Lon, e.Online, now); err != nil {
+			tx.Rollback()
+			return err
+		}
+	}
+	return tx.Commit()
+}
+
+// ListNYCTMCNearest returns cached DOT cameras sorted by distance from
+// lat/lon (nearest first).
+func (s *Store) ListNYCTMCNearest(lat, lon float64, limit int) ([]NYCTMCCacheEntry, error) {
+	rows, err := s.db.Query(`SELECT dot_id,name,lat,lon,COALESCE(online,0) FROM nyctmc_cameras
+	ORDER BY (lat-?)*(lat-?) + (lon-?)*(lon-?) ASC LIMIT ?`, lat, lat, lon, lon, limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []NYCTMCCacheEntry
+	for rows.Next() {
+		var e NYCTMCCacheEntry
+		var on int
+		if err := rows.Scan(&e.DotID, &e.Name, &e.Lat, &e.Lon, &on); err != nil {
+			return nil, err
+		}
+		e.Online = on == 1
+		out = append(out, e)
+	}
+	return out, rows.Err()
 }

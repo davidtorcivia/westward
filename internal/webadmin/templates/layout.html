@@ -4,16 +4,24 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>westward admin</title>
+    <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
     <link rel="stylesheet" href="/admin/static/admin.css" />
   </head>
   <body>
     <nav class="bar">
-      <a href="/admin">westward</a>
+      <a class="brand" href="/admin">westward</a>
       <a href="/admin/cameras">cameras</a>
+      <a href="/admin/map">map</a>
       <a href="/admin/alerts">alerts</a>
+      <a href="/admin/notifiers">notifiers</a>
       <a href="/admin/forecast">forecast</a>
       <a href="/admin/settings">settings</a>
+      <span class="spacer"></span>
       <a href="/" target="_blank">gallery ↗</a>
+      <form method="post" action="/admin/logout" class="inline logout">
+        <input type="hidden" name="csrf" value="{{$.CSRF}}" />
+        <button class="linklike">sign out</button>
+      </form>
     </nav>
     <main class="wrap">{{end}}{{define "foot"}}</main>
     <script src="/admin/static/admin.js" defer></script>

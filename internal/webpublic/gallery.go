@@ -16,7 +16,7 @@ import (
 	"github.com/davidtorcivia/westward/internal/store"
 )
 
-//go:embed templates/*.html static/*
+//go:embed templates/*.html static/* favicon.svg
 var content embed.FS
 
 type Gallery struct {
@@ -147,3 +147,14 @@ func Static() http.Handler {
 	}
 	return http.StripPrefix("/static/", http.FileServer(http.FS(sub)))
 }
+
+// Favicon returns the embedded sunset mark.
+func Favicon() []byte { return faviconSVG }
+
+var faviconSVG = func() []byte {
+	b, err := content.ReadFile("favicon.svg")
+	if err != nil {
+		panic(err)
+	}
+	return b
+}()
