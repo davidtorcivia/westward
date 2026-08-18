@@ -1,0 +1,31 @@
+services:
+  westward:
+    build: .
+    image: westward:latest
+    restart: unless-stopped
+    ports:
+      # loopback only; cloudflared connects from the host
+      - "127.0.0.1:8080:8080"
+    volumes:
+      - westward_data:/data
+    environment:
+      # 12+ chars required or startup fails
+      WESTWARD_ADMIN_PASSWORD: "${WESTWARD_ADMIN_PASSWORD:?}"
+      WESTWARD_ADMIN_USER: admin
+      # secrets: values live in .env; config references the names
+      WESTWARD_NTFY_TOKEN: "${WESTWARD_NTFY_TOKEN:-}"
+      WESTWARD_PUSHOVER_TOKEN: "${WESTWARD_PUSHOVER_TOKEN:-}"
+      WESTWARD_PUSHOVER_USER: "${WESTWARD_PUSHOVER_USER:-}"
+      WESTWARD_SUNSETHUE_KEY: "${WESTWARD_SUNSETHUE_KEY:-}"
+      WESTWARD_WEBHOOK_HMAC_KEY: "${WESTWARD_WEBHOOK_HMAC_KEY:-}"
+      # camera credentials: env holds "user:password"
+      WESTWARD_CAM_WINDOW: "${WESTWARD_CAM_WINDOW:-}"
+    healthcheck:
+      test: ["/westward", "healthcheck", "--addr", "127.0.0.1:8080"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
+
+volumes:
+  westward_data:

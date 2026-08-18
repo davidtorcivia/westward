@@ -1,6 +1,7 @@
 package store
 
 import (
+	"os"
 	"path/filepath"
 	"testing"
 )
@@ -87,4 +88,37 @@ func TestRawSettings(t *testing.T) {
 	if ok, err := s.GetSettingRaw("install_date", &out); !ok || err != nil || out != "2026-08-18" {
 		t.Fatalf("ok=%v err=%v out=%q", ok, err, out)
 	}
+}
+
+func TestBackupRestoreRoundTrip(t *testing.T) {
+	_, path := open(t)
+	// write a day row, snapshot, wipe, restore, assert intact
+	s := tTempRestore(t, path)
+	defer s.Close()
+	s.UpsertDayStart("2026-08-18")
+	sc := 43.2
+	if err := s.CompleteDay("2026-08-18", "complete", "", &sc, "", 0, "/x/best.jpg", "", ""); err != nil {
+		t.Fatal(err)
+	}
+	snap := filepath.Join(t.TempDir(), "snap.db")
+	if err := s.Backup(snap); err != nil {
+		t.Fatal(err)
+	}
+	// restore = open the snapshot directly
+	s2, err := Open(snap)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer s2.Close()
+	day, ok, err := s2.GetDay("2026-08-18")
+	if err != nil || !ok || day.Status != "complete" || day.BestScore == nil || *day.BestScore != 43.2 {
+		t.Fatalf("round trip lost data: ok=%v err=%v day=%+v", ok, err, day)
+	}
+}
+
+func tTempRestore(t *testing.T, _ string) *Store {
+	t.Helper()
+	s, path := open(t)
+	t.Cleanup(func() { os.Remove(path + "-wal"); os.Remove(path + "-shm") })
+	return s
 }

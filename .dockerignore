@@ -1,0 +1,7 @@
+.git
+.pi
+testdata
+*.db
+data/
+tmp/
+westward

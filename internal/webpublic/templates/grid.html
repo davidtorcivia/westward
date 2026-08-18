@@ -1,0 +1,35 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex">
+<title>westward — sunsets</title>
+<link rel="stylesheet" href="/static/gallery.css">
+</head>
+<body>
+<main class="grid" aria-label="Daily sunset frames">
+{{range .Cells}}
+  {{if .HasImg}}
+  <figure class="cell">
+    <button type="button" class="ph" data-best="{{.Best}}" data-date="{{.Date}}" data-score="{{printf "%.1f" .Score}}"{{if .Attr}} data-attr="{{.Attr}}"{{end}}>
+      <img loading="lazy" decoding="async" width="480" height="270"
+        src="{{if .T480}}{{.T480}}{{else}}{{.Best}}{{end}}"
+        {{if .T240}}srcset="{{.T240}} 240w, {{.T480}} 480w"{{end}}
+        alt="{{.Alt}}">
+    </button>
+  </figure>
+  {{else}}
+  <div class="cell empty"><span class="vh">{{.Date}} — no capture</span></div>
+  {{end}}
+{{end}}
+</main>
+{{if .HasOlder}}<nav class="pager"><a href="/older?page={{.NextPage}}">older →</a></nav>{{end}}
+<div id="lb" class="lb" role="dialog" aria-modal="true" aria-label="Sunset viewer" hidden>
+  <button type="button" class="lb-close" aria-label="Close">×</button>
+  <img id="lb-img" src="" alt="">
+  <p id="lb-cap" class="lb-cap"></p>
+</div>
+<script src="/static/gallery.js" defer></script>
+</body>
+</html>

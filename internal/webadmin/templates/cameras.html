@@ -1,0 +1,103 @@
+{{template "head" .}}
+<h1>Cameras</h1>
+{{with .Data}}
+{{if .Saved}}<p class="ok">saved</p>{{end}}
+
+<section class="card">
+  <h2 id="new">Add camera</h2>
+  <form method="post" action="/admin/cameras/save" class="gridform">
+    <input type="hidden" name="csrf" value="{{$.CSRF}}">
+    <input type="hidden" name="id" value="">
+    <label>Name <input name="name" required></label>
+    <label>Type
+      <select name="type" id="new-type">
+        <option value="httpjpeg">httpjpeg (URL)</option>
+        <option value="nyctmc">nyctmc (DOT id)</option>
+      </select>
+    </label>
+    <label><span id="new-ref-label">JPEG URL</span> <input name="ref" id="new-ref" required placeholder="http://…/snapshot.jpg"></label>
+    <label>Credential env ref <input name="credential_ref" placeholder="WESTWARD_CAM_WINDOW"></label>
+    <label>Role
+      <select name="role">
+        <option value="trigger_only">trigger only</option>
+        <option value="publish_primary">publish primary</option>
+        <option value="publish_backup">publish backup</option>
+      </select>
+    </label>
+    <label class="chk"><input type="checkbox" name="enabled" checked> enabled</label>
+    <button class="btn">add</button>
+  </form>
+</section>
+
+{{range .Cameras}}
+<section class="card cam" id="edit-{{.ID}}">
+  <h2>{{.Name}} <small class="dim">{{.Type}} · {{.ID}}</small></h2>
+  <form method="post" action="/admin/cameras/save" class="camform">
+    <input type="hidden" name="csrf" value="{{$.CSRF}}">
+    <input type="hidden" name="id" value="{{.ID}}">
+    <input type="hidden" name="roi" id="roi-{{.ID}}" value="{{roiJSON .}}">
+    <input type="hidden" name="crop" id="crop-{{.ID}}" value="{{cropJSON .}}">
+
+    <div class="camcols">
+      <div class="camleft">
+        <label>Name <input name="name" value="{{.Name}}" required></label>
+        <label>Type <input name="type" value="{{.Type}}" readonly></label>
+        <label>Ref <input name="ref" value="{{.Ref}}" required></label>
+        <label>Credential env ref <input name="credential_ref" value="{{.CredentialRef}}"></label>
+        <label>Role
+          <select name="role">
+            <option value="trigger_only" {{if eq .Role "trigger_only"}}selected{{end}}>trigger only</option>
+            <option value="publish_primary" {{if eq .Role "publish_primary"}}selected{{end}}>publish primary</option>
+            <option value="publish_backup" {{if eq .Role "publish_backup"}}selected{{end}}>publish backup</option>
+          </select>
+        </label>
+        <label>Attribution <input name="attribution" value="{{.Attribution}}"></label>
+        <label>Publish priority <input name="publish_priority" type="number" value="{{.PublishPriority}}"></label>
+        <label class="chk">
+          <input type="checkbox" name="enabled" {{if .Enabled}}checked{{end}}> enabled
+        </label>
+        <label class="chk" title="NYCTMC frames in the public gallery require the signed DOT agreement.">
+          <input type="checkbox" name="publish_eligible" {{if .PublishEligible}}checked{{end}}
+            data-warn-nyctmc="{{if eq .Type "nyctmc"}}1{{end}}"> publish eligible
+        </label>
+
+        <fieldset>
+          <legend>Trigger</legend>
+          <label>Threshold abs <input name="threshold_abs" type="number" step="0.5" value="{{.ThresholdAbs}}"></label>
+          {{with $t := triggerOf .}}
+          <label>Ratio <input name="ratio" type="number" step="0.1" value="{{$t.Ratio}}"></label>
+          <label>Delta abs <input name="delta_abs" type="number" step="0.5" value="{{$t.DeltaAbs}}"></label>
+          <label>Rise delta <input name="rise_delta" type="number" step="0.1" value="{{$t.RiseDelta}}"></label>
+          {{end}}
+        </fieldset>
+      </div>
+
+      <div class="camright">
+        <div class="preview" data-cam="{{.ID}}">
+          <img class="pv" data-cam="{{.ID}}" alt="camera preview">
+          <canvas class="roi" data-cam="{{.ID}}" width="640" height="360"></canvas>
+          <p class="roi-readout" data-cam="{{.ID}}"></p>
+          <div class="pvbtns">
+            <button type="button" class="btn sm" data-act="preview" data-cam="{{.ID}}">preview</button>
+            <button type="button" class="btn sm" data-act="match" data-cam="{{.ID}}">crop ← ROI</button>
+            <button type="button" class="btn sm ghost" data-act="clear-roi" data-cam="{{.ID}}">clear ROI</button>
+            <button type="button" class="btn sm ghost" data-act="clear-crop" data-cam="{{.ID}}">clear crop</button>
+          </div>
+        </div>
+        <p class="hint">Drag on the preview: <span class="roi-sw"></span> scoring ROI · <span class="crop-sw"></span> publish crop. Keep the crop aspect constant for a tidy grid.</p>
+      </div>
+    </div>
+    <div class="actions">
+      <button class="btn">save</button>
+    </div>
+  </form>
+  <form method="post" action="/admin/cameras/delete" class="inline"
+    onsubmit="return confirm('Delete camera {{.Name}}? Frames stay on disk until retention.')">
+    <input type="hidden" name="csrf" value="{{$.CSRF}}">
+    <input type="hidden" name="id" value="{{.ID}}">
+    <button class="btn danger sm">delete</button>
+  </form>
+</section>
+{{end}}
+{{end}}
+{{template "foot" .}}

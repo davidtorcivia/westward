@@ -185,3 +185,9 @@ func (s *Store) GetSettingRaw(key string, out any) (bool, error) {
 	}
 	return true, json.Unmarshal([]byte(raw), out)
 }
+
+// Backup runs VACUUM INTO dst (a full, consistent SQLite snapshot).
+func (s *Store) Backup(dst string) error {
+	_, err := s.db.Exec(`VACUUM INTO ?`, dst)
+	return err
+}

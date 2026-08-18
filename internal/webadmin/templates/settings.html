@@ -1,0 +1,41 @@
+{{template "head" .}}
+<h1>Settings</h1>
+{{with .Data}}
+{{if .Saved}}<p class="ok">saved — scheduler picks changes up on the next cycle</p>{{end}}
+<section class="card">
+<form method="post" action="/admin/settings/save" class="gridform">
+  <input type="hidden" name="csrf" value="{{$.CSRF}}">
+  <h2>Location</h2>
+  <label>Latitude <input name="lat" type="number" step="0.0001" value="{{.Settings.Lat}}"></label>
+  <label>Longitude <input name="lon" type="number" step="0.0001" value="{{.Settings.Lon}}"></label>
+  <label>Timezone <input name="tz" value="{{.Settings.TZ}}"></label>
+
+  <h2>Capture</h2>
+  <label>Poll interval (s, ≥15) <input name="interval_s" type="number" value="{{.Settings.Capture.IntervalS}}"></label>
+  <label>Window before sunset (s) <input name="before_s" type="number" value="{{.Settings.Capture.BeforeS}}"></label>
+  <label>Window after dusk (s) <input name="after_s" type="number" value="{{.Settings.Capture.AfterS}}"></label>
+
+  <h2>Alerts &amp; archive</h2>
+  <label>Quality floor (0–100) <input name="quality_floor" type="number" step="1" value="{{.Settings.QualityFloor}}"></label>
+  <label>Darkness floor (median L*) <input name="darkness_floor" type="number" step="1" value="{{.Settings.Archive.DarknessFloor}}"></label>
+  <label>Cutoff after dusk (s) <input name="cutoff_s" type="number" value="{{.Settings.Archive.CutoffAfterDuskS}}"></label>
+  <label>Frame retention (days) <input name="retention_days" type="number" value="{{.Settings.RetentionFramesDays}}"></label>
+
+  <h2>GO trigger</h2>
+  <label>Threshold abs <input name="trigger_abs" type="number" step="0.5" value="{{.Settings.Trigger.ThresholdAbs}}"></label>
+  <label>Ratio <input name="trigger_ratio" type="number" step="0.1" value="{{.Settings.Trigger.Ratio}}"></label>
+  <label>Delta abs <input name="trigger_delta" type="number" step="0.5" value="{{.Settings.Trigger.DeltaAbs}}"></label>
+  <label>Rise delta <input name="trigger_rise" type="number" step="0.1" value="{{.Settings.Trigger.RiseDelta}}"></label>
+
+  <h2>Forecast</h2>
+  <label>Provider
+    <select name="provider">
+      <option value="openmeteo" {{if eq .Settings.Forecast.Provider "openmeteo"}}selected{{end}}>openmeteo</option>
+      <option value="sunsethue" {{if eq .Settings.Forecast.Provider "sunsethue"}}selected{{end}}>sunsethue</option>
+    </select>
+  </label>
+  <button class="btn">save settings</button>
+</form>
+</section>
+{{end}}
+{{template "foot" .}}

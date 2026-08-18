@@ -1,0 +1,19 @@
+{{template "head" .}}
+<h1>Forecast</h1>
+{{with .Data}}
+<section class="card">
+  <h2>Provider comparison <small class="dim">(latest per day)</small></h2>
+  <table>
+    <tr><th>date</th><th>openmeteo</th><th>sunsethue</th></tr>
+    {{range .Cmp}}
+    <tr><td>{{.date}}</td>
+      <td>{{if .openmeteo}}{{printf "%.0f" .openmeteo}}{{else}}—{{end}}</td>
+      <td>{{if .sunsethue}}{{printf "%.0f" .sunsethue}}{{else}}—{{end}}</td></tr>
+    {{else}}
+    <tr><td colspan="3" class="dim">no observations yet</td></tr>
+    {{end}}
+  </table>
+  <p class="hint">Scores are forecast quality 0–100, not observed color. Observed max color score joins once days complete.</p>
+</section>
+{{end}}
+{{template "foot" .}}

@@ -6,6 +6,9 @@ import (
 	"fmt"
 	"log/slog"
 	"os"
+	"path/filepath"
+	"sort"
+	"strings"
 	"syscall"
 	"time"
 
@@ -157,6 +160,18 @@ func (e *Engine) tick(ctx context.Context) error {
 		return err
 	}
 	date := now.Format("2006-01-02")
+
+	// Nightly backup at 02:30, keep 7.
+	if b := e.atLocal(now, 2, 30); !now.Before(b) {
+		var lastB string
+		if ok, _ := e.Store.GetSettingRaw("backup_last", &lastB); !ok || lastB != date {
+			if err := e.Backup(e.DataRoot+"/backups", 7); err != nil {
+				e.Log.Error("backup failed", "err", err.Error())
+			} else {
+				e.Store.SetSettingRaw("backup_last", date)
+			}
+		}
+	}
 
 	// Retention: due at/after 03:30 and not yet run today.
 	if r := e.atLocal(now, 3, 30); !now.Before(r) {
@@ -643,4 +658,32 @@ func (e *Engine) sendHeadsUp(ctx context.Context, date string, ev solar.Events) 
 		ev.Sunset, obs.Detail+fallbackNote, obs.Provider); err != nil {
 		e.Log.Error("heads-up failed", "err", err.Error())
 	}
+}
+
+// Backup runs VACUUM INTO into dir and prunes to the newest keep files.
+// /data/best (+ sidecars) and the backup file together form the durable set.
+func (e *Engine) Backup(dir string, keep int) error {
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		return err
+	}
+	name := filepath.Join(dir, "westward-"+time.Now().UTC().Format("20060102T150405")+".db")
+	if err := e.Store.Backup(name); err != nil {
+		return err
+	}
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		return err
+	}
+	var backups []string
+	for _, en := range entries {
+		if strings.HasPrefix(en.Name(), "westward-") && strings.HasSuffix(en.Name(), ".db") {
+			backups = append(backups, en.Name())
+		}
+	}
+	sort.Strings(backups)
+	for i := 0; i < len(backups)-keep; i++ {
+		os.Remove(filepath.Join(dir, backups[i]))
+	}
+	e.Log.Info("backup written", "path", name, "keep", keep)
+	return nil
 }
