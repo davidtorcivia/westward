@@ -220,6 +220,23 @@
     });
   }
 
+
+  /* ---------- notifier add form: type switcher ---------- */
+  var ntype = document.getElementById("add-type");
+  if (ntype) {
+    var panels = document.querySelectorAll("#add-notifier [data-for]");
+    function ntypeUpdate() {
+      panels.forEach((p) => {
+        var on = p.dataset.for === ntype.value;
+        p.hidden = !on;
+        p.querySelectorAll("input, select").forEach((i) => {
+          i.disabled = !on;
+        });
+      });
+    }
+    ntype.addEventListener("change", ntypeUpdate);
+    ntypeUpdate();
+  }
   /* ---------- nyctmc publish warning ---------- */
   document.querySelectorAll("input[data-warn-nyctmc]").forEach((chk) => {
     chk.addEventListener("change", () => {

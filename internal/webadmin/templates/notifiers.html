@@ -1,84 +1,45 @@
 {{template "head" .}}
 <h1>Notifiers</h1>
-{{with .Data}} {{if .Saved}}
-<p class="ok">saved · delivery workers pick it up immediately</p>
-{{end}}
+{{with .Data}}
+{{if .Saved}}<p class="ok">saved · delivery workers pick it up immediately</p>{{end}}
+
 <section class="card">
   <h2>Channels</h2>
-  {{if not .Defs}}
-  <p class="dim">none configured</p>
-  {{end}} {{range .Defs}}
+  {{if not .Defs}}<p class="dim">none configured · add one below</p>{{end}}
+  {{range .Defs}}
   <form method="post" action="/admin/notifiers/save" class="notifier">
     <input type="hidden" name="csrf" value="{{$.CSRF}}" />
+    <input type="hidden" name="type" value="{{.Type}}" />
     <input type="hidden" name="id" value="{{.ID}}" />
     <div class="nrow">
       <span class="ntype ntype-{{.Type}}">{{.Type}}</span>
-      <label class="grow"
-        >id <input name="id_display" value="{{.ID}}" readonly
-      /></label>
-      <label class="chk"
-        ><input type="checkbox" name="enabled" {{if .Enabled}}checked{{end}} />
-        enabled</label
-      >
+      <label class="grow">id <input name="id_display" value="{{.ID}}" readonly /></label>
+      <label class="chk"><input type="checkbox" name="enabled" {{if .Enabled}}checked{{end}} /> enabled</label>
     </div>
     {{if eq .Type "ntfy"}}
     <div class="nrow">
-      <label class="grow"
-        >server
-        <input name="server" value="{{.Server}}" placeholder="https://ntfy.sh"
-      /></label>
-      <label class="grow"
-        >topic <input name="topic" value="{{.Topic}}" required
-      /></label>
-      <label class="grow"
-        >token env
-        <input
-          name="token_env"
-          value="{{.TokenEnv}}"
-          placeholder="WESTWARD_NTFY_TOKEN"
-      /></label>
+      <label class="grow">server <input name="server" value="{{if .Server}}{{.Server}}{{else}}https://ntfy.sh{{end}}" /></label>
+      <label class="grow">topic <input name="topic" value="{{.Topic}}" placeholder="sunset-alerts-xyz" required /></label>
+      <label class="grow">token env <input name="token_env" value="{{if .TokenEnv}}{{.TokenEnv}}{{else}}WESTWARD_NTFY_TOKEN{{end}}" /></label>
     </div>
+    <p class="hint">Topic is the ntfy channel name. Token env is only needed for protected topics.</p>
     {{else if eq .Type "pushover"}}
     <div class="nrow">
-      <label class="grow"
-        >token env
-        <input
-          name="token_env"
-          value="{{.TokenEnv}}"
-          placeholder="WESTWARD_PUSHOVER_TOKEN"
-      /></label>
-      <label class="grow"
-        >user env
-        <input
-          name="user_env"
-          value="{{.UserEnv}}"
-          placeholder="WESTWARD_PUSHOVER_USER"
-      /></label>
+      <label class="grow">app token env <input name="token_env" value="{{if .TokenEnv}}{{.TokenEnv}}{{else}}WESTWARD_PUSHOVER_TOKEN{{end}}" /></label>
+      <label class="grow">user key env <input name="user_env" value="{{if .UserEnv}}{{.UserEnv}}{{else}}WESTWARD_PUSHOVER_USER{{end}}" /></label>
     </div>
+    <p class="hint">Both env vars must hold your Pushover application token and user key.</p>
     {{else if eq .Type "webhook"}}
     <div class="nrow">
-      <label class="grow"
-        >url
-        <input
-          name="url"
-          value="{{.URL}}"
-          placeholder="https://example.com/hook"
-      /></label>
-      <label class="grow"
-        >hmac env
-        <input
-          name="hmac_env"
-          value="{{.HMACEnv}}"
-          placeholder="WESTWARD_WEBHOOK_HMAC_KEY"
-      /></label>
+      <label class="grow">url <input name="url" value="{{.URL}}" placeholder="https://example.com/hook" required /></label>
+      <label class="grow">hmac key env <input name="hmac_env" value="{{if .HMACEnv}}{{.HMACEnv}}{{else}}WESTWARD_WEBHOOK_HMAC_KEY{{end}}" /></label>
     </div>
+    <p class="hint">POSTs signed JSON; receivers dedupe on event_id. HMAC env is optional.</p>
     {{end}}
-    <input type="hidden" name="type" value="{{.Type}}" />
     <div class="nrow">
       <button class="btn sm">save</button>
-      <button class="btn sm danger" formaction="/admin/notifiers/delete">
-        delete
-      </button>
+      <button class="btn sm danger" formaction="/admin/notifiers/delete">delete</button>
+      <span class="hint inline-hint">test from the <a href="/admin">dashboard</a></span>
     </div>
   </form>
   {{end}}
@@ -86,40 +47,47 @@
 
 <section class="card">
   <h2>Add channel</h2>
-  <form method="post" action="/admin/notifiers/save" class="notifier">
+  <form method="post" action="/admin/notifiers/save" class="notifier" id="add-notifier">
     <input type="hidden" name="csrf" value="{{$.CSRF}}" />
     <input type="hidden" name="id" value="" />
     <div class="nrow">
-      <label
-        >type
-        <select name="type" required>
-          <option value="ntfy">ntfy</option>
+      <label>type
+        <select name="type" id="add-type" required>
+          <option value="ntfy" selected>ntfy</option>
           <option value="pushover">pushover</option>
           <option value="webhook">webhook</option>
         </select>
       </label>
-      <label class="grow"
-        >server <input name="server" placeholder="https://ntfy.sh"
-      /></label>
-      <label class="grow">topic <input name="topic" /></label>
-      <label class="grow"
-        >url <input name="url" placeholder="https://…/hook"
-      /></label>
-      <label class="grow"
-        >token env <input name="token_env" placeholder="WESTWARD_…"
-      /></label>
-      <label class="grow"
-        >user env <input name="user_env" placeholder="WESTWARD_…"
-      /></label>
-      <label class="chk"
-        ><input type="checkbox" name="enabled" checked /> enabled</label
-      >
+      <label class="chk"><input type="checkbox" name="enabled" checked /> enabled</label>
     </div>
-    <button class="btn">add</button>
+
+    <div data-for="ntfy">
+      <div class="nrow">
+        <label class="grow">server <input name="server" value="https://ntfy.sh" /></label>
+        <label class="grow">topic <input name="topic" placeholder="sunset-alerts-xyz" required /></label>
+        <label class="grow">token env <input name="token_env" value="WESTWARD_NTFY_TOKEN" /></label>
+      </div>
+      <p class="hint">Easiest: install the ntfy app, subscribe to a private-looking topic name, done.</p>
+    </div>
+
+    <div data-for="pushover" hidden>
+      <div class="nrow">
+        <label class="grow">app token env <input name="token_env" value="WESTWARD_PUSHOVER_TOKEN" /></label>
+        <label class="grow">user key env <input name="user_env" value="WESTWARD_PUSHOVER_USER" /></label>
+      </div>
+      <p class="hint">Needs a Pushover application token and your user key in the shown env vars.</p>
+    </div>
+
+    <div data-for="webhook" hidden>
+      <div class="nrow">
+        <label class="grow">url <input name="url" placeholder="https://example.com/hook" required /></label>
+        <label class="grow">hmac key env <input name="hmac_env" value="WESTWARD_WEBHOOK_HMAC_KEY" /></label>
+      </div>
+      <p class="hint">Receivers get signed JSON and can dedupe on event_id.</p>
+    </div>
+
+    <button class="btn">add channel</button>
   </form>
-  <p class="hint">
-    Secrets stay in env vars · fields store the env NAME. One mismatched field
-    per type is ignored.
-  </p>
 </section>
-{{end}} {{template "foot" .}}
+{{end}}
+{{template "foot" .}}
