@@ -238,6 +238,133 @@
   }
 
 
+
+  /* ---------- universal modal ---------- */
+  function buildModal() {
+    var d = document.createElement("dialog");
+    d.id = "modal";
+    var t = document.createElement("h3");
+    t.className = "modal-title";
+    var m = document.createElement("div");
+    m.className = "modal-msg";
+    var btns = document.createElement("div");
+    btns.className = "modal-btns";
+    var cancel = document.createElement("button");
+    cancel.type = "button";
+    cancel.className = "btn ghost";
+    cancel.dataset.modalCancel = "1";
+    cancel.textContent = "Cancel";
+    var ok = document.createElement("button");
+    ok.type = "button";
+    ok.className = "btn";
+    ok.dataset.modalOk = "1";
+    btns.appendChild(cancel);
+    btns.appendChild(ok);
+    d.appendChild(t);
+    d.appendChild(m);
+    d.appendChild(btns);
+    document.body.appendChild(d);
+    return d;
+  }
+
+  // modalConfirm(message, {title, danger, confirmLabel}) -> Promise<bool>
+  window.modalConfirm = function (message, opts) {
+    opts = opts || {};
+    var d = document.getElementById("modal") || buildModal();
+    var t = d.querySelector(".modal-title");
+    t.textContent = opts.title || "Confirm";
+    t.hidden = false;
+    var m = d.querySelector(".modal-msg");
+    m.textContent = message;
+    var ok = d.querySelector("[data-modal-ok]");
+    ok.textContent = opts.confirmLabel || "Confirm";
+    ok.className = "btn" + (opts.danger ? " danger" : "");
+    return new Promise(function (resolve) {
+      function done(v) {
+        d.close();
+        resolve(v);
+      }
+      ok.onclick = function () { done(true); };
+      d.querySelector("[data-modal-cancel]").onclick = function () { done(false); };
+      d.oncancel = function (e) { e.preventDefault(); done(false); };
+      d.onclick = function (e) { if (e.target === d) done(false); };
+      d.showModal();
+    });
+  };
+
+  // Forms declaring data-confirm ask before submitting.
+  document.addEventListener("submit", function (e) {
+    var form = e.target;
+    var q = form.dataset && form.dataset.confirm;
+    if (!q || form.dataset.confirmed) return;
+    e.preventDefault();
+    modalConfirm(q, { title: "Confirm", danger: true, confirmLabel: form.dataset.confirmLabel || "Delete" })
+      .then(function (yes) {
+        if (yes) {
+          form.dataset.confirmed = "1";
+          form.submit();
+        }
+      });
+  });
+
+  // DOT camera preview modal (used by the map): live frame + add/close.
+  window.modalDotPreview = function (cam, addFn) {
+    var d = document.getElementById("modal") || buildModal();
+    // repurpose the shared dialog: title, message slot holds the image
+    var title = d.querySelector(".modal-title");
+    title.hidden = false;
+    title.textContent = cam.Name + (cam.Online ? "" : " (offline)");
+    var msg = d.querySelector(".modal-msg");
+
+    var img = document.createElement("img");
+    img.className = "modal-img";
+    img.alt = "live preview";
+    var status = document.createElement("div");
+    status.className = "modal-status";
+    status.textContent = "loading frame…";
+    msg.textContent = "";
+    msg.appendChild(img);
+    msg.appendChild(status);
+
+    fetch("/admin/dot/shot/" + encodeURIComponent(cam.DotID) + "?v=" + Date.now())
+      .then(function (r) {
+        if (!r.ok) throw new Error("HTTP " + r.status);
+        return r.blob();
+      })
+      .then(function (b) {
+        img.src = URL.createObjectURL(b);
+        status.textContent = "";
+      })
+      .catch(function (e) {
+        img.remove();
+        status.textContent = "preview failed: " + (e.message || e);
+      });
+
+    var ok = d.querySelector("[data-modal-ok]");
+    ok.textContent = "Add camera";
+    ok.className = "btn";
+    ok.onclick = function () {
+      d.close();
+      addFn([
+        ["csrf", document.querySelector('input[name="csrf"]').value],
+        ["id", ""],
+        ["name", cam.Name],
+        ["type", "nyctmc"],
+        ["ref", cam.DotID],
+        ["role", "trigger_only"],
+        ["lat", String(cam.Lat)],
+        ["lon", String(cam.Lon)],
+        ["enabled", "on"],
+        ["publish_eligible", "on"],
+        ["threshold_abs", "12"],
+      ]);
+    };
+    d.querySelector("[data-modal-cancel]").onclick = function () { d.close(); };
+    d.oncancel = function (e) { e.preventDefault(); d.close(); };
+    d.onclick = function (e) { if (e.target === d) d.close(); };
+    if (!d.open) d.showModal();
+  };
+
   /* ---------- notifier add form: type switcher ---------- */
   var ntype = document.getElementById("add-type");
   if (ntype) {
@@ -258,13 +385,12 @@
   document.querySelectorAll("input[data-warn-nyctmc]").forEach((chk) => {
     chk.addEventListener("change", () => {
       if (chk.checked && chk.dataset.warnNyctmc === "1") {
-        if (
-          !window.confirm(
-            "Publishing NYCTMC frames publicly assumes your signed DOT data-sharing agreement covers republication. Proceed?",
-          )
-        ) {
-          chk.checked = false;
-        }
+        modalConfirm(
+          "Publishing NYCTMC frames publicly assumes your signed DOT data-sharing agreement covers republication. Proceed?",
+          { title: "Publish DOT frames", confirmLabel: "Publish" },
+        ).then(function (yes) {
+          if (!yes) chk.checked = false;
+        });
       }
     });
   });

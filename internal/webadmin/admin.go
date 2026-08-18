@@ -136,6 +136,7 @@ func (a *Admin) Register(s *server.Server) {
 	s.Admin("POST /admin/notifiers/save", a.notifierSave)
 	s.Admin("POST /admin/notifiers/delete", a.notifierDelete)
 	s.Admin("GET /admin/cameras/shot/{id}", a.cameraShot)
+	s.Admin("GET /admin/dot/shot/{dot}", a.cameraShotDot)
 }
 
 // cameraShot serves a preview JPEG as an <img> target (GET, session-auth).
@@ -153,6 +154,32 @@ func (a *Admin) cameraShot(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		// Show the real reason in the camera card overlay (admin-only page;
 		// source errors never embed credentials).
+		http.Error(w, "fetch failed: "+secutil.Redact(err.Error()), http.StatusBadGateway)
+		return
+	}
+	w.Header().Set("Content-Type", "image/jpeg")
+	w.Header().Set("Cache-Control", "no-store")
+	w.Write(jpegBytes)
+}
+
+// cameraShotDot serves a live frame for any DOT camera id (map preview
+// modal); does not require a saved camera row.
+func (a *Admin) cameraShotDot(w http.ResponseWriter, r *http.Request) {
+	if a.Preview == nil {
+		http.Error(w, "preview unavailable", http.StatusServiceUnavailable)
+		return
+	}
+	dotID := r.PathValue("dot")
+	if dotID == "" || strings.ContainsAny(dotID, "/?& ") {
+		http.NotFound(w, r)
+		return
+	}
+	cam := store.Camera{
+		ID: "dot-preview", Name: "DOT preview", Type: "nyctmc", Ref: dotID,
+		State: "ok", Role: "trigger_only", ThresholdAbs: 12,
+	}
+	jpegBytes, _, _, err := a.Preview(cam)
+	if err != nil {
 		http.Error(w, "fetch failed: "+secutil.Redact(err.Error()), http.StatusBadGateway)
 		return
 	}

@@ -107,7 +107,7 @@
     </div>
   </form>
   <form method="post" action="/admin/cameras/delete" class="inline"
-    onsubmit="return confirm('Delete camera {{.Name}}?')">
+    data-confirm="Delete camera {{.Name}}? Frames stay on disk until retention.">
     <input type="hidden" name="csrf" value="{{$.CSRF}}" />
     <input type="hidden" name="id" value="{{.ID}}" />
     <button class="btn danger sm">delete</button>

@@ -96,26 +96,35 @@
         m.bindTooltip(
           c.Name + (c.Online ? " · click to add" : " (offline) · click to add"),
         );
-        m.on("click", () => {
-          if (window.confirm("Add DOT camera " + c.Name + "?")) {
-            addCamera([
-              ["csrf", document.querySelector('input[name="csrf"]').value],
-              ["id", ""],
-              ["name", c.Name],
-              ["type", "nyctmc"],
-              ["ref", c.DotID],
-              ["role", "trigger_only"],
-              ["lat", String(c.Lat)],
-              ["lon", String(c.Lon)],
-              ["enabled", "on"],
-              ["publish_eligible", "on"],
-              ["threshold_abs", "12"],
-            ]);
-          }
-        });
+        m.on("click", () => showDotPreview(c));
       });
 
       dotUpdate();
       hintUpdate();
     });
+
+  // Click a DOT marker: live frame + add/close. Falls back to a plain
+  // confirm when the modal helper is unavailable.
+  function showDotPreview(c) {
+    var modal = window.modalDotPreview || null;
+    if (modal) return modal(c, addCamera);
+    var ask = window.modalConfirm || function (m) { return Promise.resolve(window.confirm(m)); };
+    ask("Add DOT camera " + c.Name + "?", { title: "Add camera", confirmLabel: "Add" })
+      .then(function (yes) {
+        if (yes)
+          addCamera([
+            ["csrf", document.querySelector('input[name="csrf"]').value],
+            ["id", ""],
+            ["name", c.Name],
+            ["type", "nyctmc"],
+            ["ref", c.DotID],
+            ["role", "trigger_only"],
+            ["lat", String(c.Lat)],
+            ["lon", String(c.Lon)],
+            ["enabled", "on"],
+            ["publish_eligible", "on"],
+            ["threshold_abs", "12"],
+          ]);
+      });
+  }
 })();
