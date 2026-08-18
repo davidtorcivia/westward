@@ -6,13 +6,25 @@
   <div class="hero-sun">
     <span class="big">{{.Sunset.Format "15:04"}}</span>
     <span class="lbl">sunset · dusk {{.Dusk.Format "15:04"}}</span>
-    <span class="lbl dim">window {{(.Sunset.Add (printDur .Settings.Capture.BeforeS)).Format "15:04"}} to {{(.Dusk.Add (printDur .Settings.Capture.AfterS)).Format "15:04"}}</span>
+    <span class="lbl dim"
+      >window {{(.Sunset.Add (printDur .Settings.Capture.BeforeS)).Format
+      "15:04"}} to {{(.Dusk.Add (printDur .Settings.Capture.AfterS)).Format
+      "15:04"}}</span
+    >
   </div>
   <div class="hero-forecast">
     {{if .OMOK}}<span class="big">{{printf "%.0f" .OM.Quality}}</span>
-    <span class="lbl">openmeteo{{if .SHOK}} · sunsethue {{printf "%.0f" .SH.Quality}}{{end}}</span>
-    <span class="lbl dim">floor {{.Settings.QualityFloor}} · provider {{.Settings.Forecast.Provider}}</span>
-    {{else}}<span class="big dim">?</span><span class="lbl">forecast fetches at {{.Sunset.Format "15:04"}}</span>{{end}}
+    <span class="lbl"
+      >openmeteo{{if .SHOK}} · sunsethue {{printf "%.0f"
+      .SH.Quality}}{{end}}</span
+    >
+    <span class="lbl dim"
+      >floor {{.Settings.QualityFloor}} · provider
+      {{.Settings.Forecast.Provider}}</span
+    >
+    {{else}}<span class="big dim">?</span
+    ><span class="lbl">forecast fetches at {{.Sunset.Format "15:04"}}</span
+    >{{end}}
   </div>
   <div class="hero-go">
     {{with .GO}}<span class="chip chip-go">GO fired</span>
@@ -28,36 +40,56 @@
   <h2>Cameras</h2>
   {{if .Cameras}}
   <table>
-    <tr><th>name</th><th>type</th><th>role</th><th>state</th><th>live</th><th></th></tr>
+    <tr>
+      <th>name</th>
+      <th>type</th>
+      <th>role</th>
+      <th>state</th>
+      <th>live</th>
+      <th></th>
+    </tr>
     {{range .Cameras}}
     <tr class="{{if not .Enabled}}dim{{end}}">
       <td>{{.Name}}</td>
       <td>{{.Type}}</td>
       <td>{{.Role}}</td>
-      <td>{{if eq .State "stale"}}<span class="warn">stale</span>{{else}}ok{{end}}</td>
+      <td>
+        {{if eq .State "stale"}}<span class="warn">stale</span>{{else}}ok{{end}}
+      </td>
       <td>{{if .Enabled}}on{{else}}off{{end}}</td>
       <td><a href="/admin/cameras#edit-{{.ID}}">edit · crop</a></td>
     </tr>
     {{end}}
   </table>
-  {{else}}<p class="dim">none yet · <a href="/admin/map">add one from the map</a></p>{{end}}
+  {{else}}
+  <p class="dim">none yet · <a href="/admin/map">add one from the map</a></p>
+  {{end}}
 </section>
 
 <section class="card">
   <h2>Last days</h2>
   <table>
-    <tr><th>date</th><th>status</th><th>score</th><th>re-render</th></tr>
+    <tr>
+      <th>date</th>
+      <th>status</th>
+      <th>score</th>
+      <th>re-render</th>
+    </tr>
     {{range .Days}}
     <tr>
       <td>{{.Date}}</td>
-      <td>{{.Status}}{{with .Reason}} <small class="dim">({{.}})</small>{{end}}</td>
+      <td>
+        {{.Status}}{{with .Reason}} <small class="dim">({{.}})</small>{{end}}
+      </td>
       <td>{{if .BestScore}}{{printf "%.1f" .BestScore}}{{end}}</td>
-      <td>{{if eq .Status "complete"}}
+      <td>
+        {{if eq .Status "complete"}}
         <form method="post" action="/admin/recrop" class="inline">
           <input type="hidden" name="csrf" value="{{$.CSRF}}" />
           <input type="hidden" name="date" value="{{.Date}}" />
           <button class="btn ghost sm">re-render</button>
-        </form>{{end}}
+        </form>
+        {{end}}
       </td>
     </tr>
     {{end}}
@@ -70,7 +102,9 @@
     <input type="hidden" name="csrf" value="{{$.CSRF}}" />
     <button class="btn sm">send test</button>
   </form>
-  <span class="hint" style="margin-left:10px">delivers to every enabled channel · <a href="/admin/notifiers">configure channels</a></span>
+  <span class="hint" style="margin-left: 10px"
+    >delivers to every enabled channel ·
+    <a href="/admin/notifiers">configure channels</a></span
+  >
 </section>
-{{end}}
-{{template "foot" .}}
+{{end}} {{template "foot" .}}

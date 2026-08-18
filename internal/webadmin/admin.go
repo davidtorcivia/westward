@@ -306,31 +306,61 @@ func (a *Admin) cameraSave(w http.ResponseWriter, r *http.Request) {
 	f := r.PostForm
 	id := f.Get("id")
 	create := id == ""
-	cam := store.Camera{
-		ID: id, Name: strings.TrimSpace(f.Get("name")),
-		Type: f.Get("type"), Ref: strings.TrimSpace(f.Get("ref")),
-		Enabled:       f.Get("enabled") == "on",
-		Role:          valueOr(f.Get("role"), "trigger_only"),
-		Attribution:   strings.TrimSpace(f.Get("attribution")),
-		CredentialRef: strings.TrimSpace(f.Get("credential_ref")),
-		State:         "ok",
+
+	// Update: start from the stored row so fields the form omits (type,
+	// state, timestamps) survive; the form overrides what it carries.
+	var cam store.Camera
+	if !create {
+		existing, err := a.Store.GetCamera(id)
+		if err != nil {
+			http.Error(w, "camera not found", http.StatusNotFound)
+			return
+		}
+		cam = existing
 	}
-	cam.PublishPriority, _ = strconv.Atoi(valueOr(f.Get("publish_priority"), "0"))
-	if f.Get("publish_eligible") == "on" {
-		cam.PublishEligible = true
+
+	if v := f.Get("type"); v != "" || create {
+		cam.Type = valueOr(f.Get("type"), "httpjpeg")
 	}
-	cam.ThresholdAbs = floatOf(valueOr(f.Get("threshold_abs"), "12"), 12)
-	if s := f.Get("roi"); s != "" {
+	if v := strings.TrimSpace(f.Get("name")); v != "" || create {
+		cam.Name = v
+	}
+	if v := strings.TrimSpace(f.Get("ref")); v != "" || create {
+		cam.Ref = v
+	}
+	cam.Enabled = f.Get("enabled") == "on"
+	cam.Role = valueOr(f.Get("role"), cam.Role)
+	cam.Attribution = strings.TrimSpace(f.Get("attribution"))
+	cam.CredentialRef = strings.TrimSpace(f.Get("credential_ref"))
+	cam.PublishPriority = intOf(f.Get("publish_priority"), cam.PublishPriority)
+	cam.PublishEligible = f.Get("publish_eligible") == "on"
+	thresholdDefault := cam.ThresholdAbs
+	if create && thresholdDefault == 0 {
+		thresholdDefault = 12
+	}
+	cam.ThresholdAbs = floatOf(f.Get("threshold_abs"), thresholdDefault)
+
+	// ROI/crop: the hidden inputs always submit; empty string = cleared.
+	// Non-empty must parse as [x,y,w,h]; junk is rejected, not silently kept.
+	if raw := f.Get("roi"); raw != "" {
 		var roi [4]float64
-		if err := json.Unmarshal([]byte(s), &roi); err == nil {
-			cam.ROIX, cam.ROIY, cam.ROIW, cam.ROIH = &roi[0], &roi[1], &roi[2], &roi[3]
+		if err := json.Unmarshal([]byte(raw), &roi); err != nil {
+			http.Error(w, "roi: want [x,y,w,h]", http.StatusBadRequest)
+			return
 		}
+		cam.ROIX, cam.ROIY, cam.ROIW, cam.ROIH = &roi[0], &roi[1], &roi[2], &roi[3]
+	} else {
+		cam.ROIX, cam.ROIY, cam.ROIW, cam.ROIH = nil, nil, nil, nil
 	}
-	if s := f.Get("crop"); s != "" {
+	if raw := f.Get("crop"); raw != "" {
 		var c [4]float64
-		if err := json.Unmarshal([]byte(s), &c); err == nil {
-			cam.CropX, cam.CropY, cam.CropW, cam.CropH = &c[0], &c[1], &c[2], &c[3]
+		if err := json.Unmarshal([]byte(raw), &c); err != nil {
+			http.Error(w, "crop: want [x,y,w,h]", http.StatusBadRequest)
+			return
 		}
+		cam.CropX, cam.CropY, cam.CropW, cam.CropH = &c[0], &c[1], &c[2], &c[3]
+	} else {
+		cam.CropX, cam.CropY, cam.CropW, cam.CropH = nil, nil, nil, nil
 	}
 	if v := floatPtr(f.Get("lat")); v != nil {
 		cam.Lat = v
@@ -350,8 +380,10 @@ func (a *Admin) cameraSave(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 	}
-	if tj := triggerJSON(f); tj != "" {
-		cam.TriggerJSON = tj
+	// Trigger overrides: the form always posts the trigger fields, so an
+	// all-defaults post clears any stored override.
+	if f.Has("threshold_abs") {
+		cam.TriggerJSON = triggerJSON(f)
 	}
 	var err error
 	if create {

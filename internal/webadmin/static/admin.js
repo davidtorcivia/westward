@@ -1,8 +1,6 @@
 // westward admin: camera previews + two-rectangle ROI/crop editor.
 // Plain JS, no dependencies. CSP-safe (external file, no inline handlers).
 (() => {
-  
-
   /* ---------- previews ---------- */
   function wirePreview(scope) {
     (scope || document).querySelectorAll(".preview.pvwrap").forEach((wrap) => {
@@ -23,18 +21,27 @@
       img.addEventListener("load", ok);
       if (!img.complete || img.naturalWidth === 0) {
         // error may have fired before wiring
-        if (img.getAttribute("src")) setTimeout(() => {
-          if (!img.complete || img.naturalWidth === 0) failed();
-        }, 4000);
+        if (img.getAttribute("src"))
+          setTimeout(() => {
+            if (!img.complete || img.naturalWidth === 0) failed();
+          }, 4000);
       } else ok();
 
-      var btn = wrap.closest(".cam, .card").querySelector("[data-act='preview'][data-cam='" + id + "']");
+      var btn = wrap
+        .closest(".cam, .card")
+        .querySelector("[data-act='preview'][data-cam='" + id + "']");
       if (btn) {
         btn.addEventListener("click", () => {
           btn.disabled = true;
           ok();
-          img.src = "/admin/cameras/shot/" + encodeURIComponent(id) + "?v=" + Date.now();
-          setTimeout(() => { btn.disabled = false; }, 1500);
+          img.src =
+            "/admin/cameras/shot/" +
+            encodeURIComponent(id) +
+            "?v=" +
+            Date.now();
+          setTimeout(() => {
+            btn.disabled = false;
+          }, 1500);
         });
       }
     });
@@ -70,8 +77,10 @@
       ctx.clearRect(0, 0, cv.width, cv.height);
       function rect(r, color) {
         if (!r) return;
-        var x = r[0] * cv.width, y = r[1] * cv.height;
-        var w = r[2] * cv.width, h = r[3] * cv.height;
+        var x = r[0] * cv.width,
+          y = r[1] * cv.height;
+        var w = r[2] * cv.width,
+          h = r[3] * cv.height;
         ctx.shadowColor = "rgba(0,0,0,0.55)";
         ctx.shadowBlur = 6;
         ctx.strokeStyle = color;
@@ -89,22 +98,33 @@
       var aspect = crop ? (crop[2] / crop[3]).toFixed(3) : "-";
       if (readout) {
         while (readout.firstChild) readout.removeChild(readout.firstChild);
-        ["scoring ROI ", fmt(roi), " · publish crop ", fmt(crop), " · crop aspect ", aspect]
-          .forEach(function (part, i) {
-            if (i % 2 === 1) {
-              var b = document.createElement("b");
-              b.textContent = part;
-              readout.appendChild(b);
-            } else {
-              readout.appendChild(document.createTextNode(part));
-            }
-          });
+        [
+          "scoring ROI ",
+          fmt(roi),
+          " · publish crop ",
+          fmt(crop),
+          " · crop aspect ",
+          aspect,
+        ].forEach(function (part, i) {
+          if (i % 2 === 1) {
+            var b = document.createElement("b");
+            b.textContent = part;
+            readout.appendChild(b);
+          } else {
+            readout.appendChild(document.createTextNode(part));
+          }
+        });
       }
     }
 
     function set(which, r) {
-      if (which === "roi") { roi = r; if (roiField) roiField.value = r ? JSON.stringify(r) : ""; }
-      else { crop = r; if (cropField) cropField.value = r ? JSON.stringify(r) : ""; }
+      if (which === "roi") {
+        roi = r;
+        if (roiField) roiField.value = r ? JSON.stringify(r) : "";
+      } else {
+        crop = r;
+        if (cropField) cropField.value = r ? JSON.stringify(r) : "";
+      }
       draw();
     }
 
@@ -113,9 +133,11 @@
       if (b.dataset.mode && b.dataset.mode !== "preview") {
         b.addEventListener("click", () => {
           mode = b.dataset.mode;
-          card.querySelectorAll(".seg button[data-cam='" + id + "']").forEach((o) => {
-            o.classList.toggle("on", o === b);
-          });
+          card
+            .querySelectorAll(".seg button[data-cam='" + id + "']")
+            .forEach((o) => {
+              o.classList.toggle("on", o === b);
+            });
         });
       }
     });
@@ -137,13 +159,23 @@
       if (!drag) return;
       var p = pos(e);
       set(mode, [
-        Math.min(drag.x0, p[0]), Math.min(drag.y0, p[1]),
-        Math.abs(p[0] - drag.x0), Math.abs(p[1] - drag.y0),
+        Math.min(drag.x0, p[0]),
+        Math.min(drag.y0, p[1]),
+        Math.abs(p[0] - drag.x0),
+        Math.abs(p[1] - drag.y0),
       ]);
     });
     cv.addEventListener("pointerup", () => {
       if (drag) {
-        var v = parseRect(mode === "roi" ? (roiField ? roiField.value : "") : (cropField ? cropField.value : ""));
+        var v = parseRect(
+          mode === "roi"
+            ? roiField
+              ? roiField.value
+              : ""
+            : cropField
+              ? cropField.value
+              : "",
+        );
         if (v) {
           v[2] = Math.min(v[2], 1 - v[0]);
           v[3] = Math.min(v[3], 1 - v[1]);
@@ -155,10 +187,16 @@
     });
 
     // clear / copy buttons
-    card.querySelectorAll("[data-act='clear'][data-cam='" + id + "']").forEach((b) => {
-      b.addEventListener("click", () => { set(b.dataset.mode, null); });
-    });
-    var copyBtn = card.querySelector("[data-act='copy'][data-cam='" + id + "']");
+    card
+      .querySelectorAll("[data-act='clear'][data-cam='" + id + "']")
+      .forEach((b) => {
+        b.addEventListener("click", () => {
+          set(b.dataset.mode, null);
+        });
+      });
+    var copyBtn = card.querySelector(
+      "[data-act='copy'][data-cam='" + id + "']",
+    );
     if (copyBtn) {
       copyBtn.addEventListener("click", () => {
         if (roi) set("crop", roi.slice());
@@ -186,7 +224,11 @@
   document.querySelectorAll("input[data-warn-nyctmc]").forEach((chk) => {
     chk.addEventListener("change", () => {
       if (chk.checked && chk.dataset.warnNyctmc === "1") {
-        if (!window.confirm("Publishing NYCTMC frames publicly assumes your signed DOT data-sharing agreement covers republication. Proceed?")) {
+        if (
+          !window.confirm(
+            "Publishing NYCTMC frames publicly assumes your signed DOT data-sharing agreement covers republication. Proceed?",
+          )
+        ) {
           chk.checked = false;
         }
       }
