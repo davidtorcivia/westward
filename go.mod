@@ -2,6 +2,8 @@ module github.com/davidtorcivia/westward
 
 go 1.26.5
 
+toolchain go1.26.6
+
 require (
 	github.com/sj14/astral v0.2.3
 	golang.org/x/image v0.45.0
