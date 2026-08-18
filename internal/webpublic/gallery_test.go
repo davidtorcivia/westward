@@ -68,7 +68,7 @@ func TestGridRenders(t *testing.T) {
 	page := buf.String()
 	for _, want := range []string{
 		`alt="Sunset 2026-08-18, score 47.1"`,
-		"2026-08-17 — no capture",
+		"2026-08-17 · no capture",
 		`srcset="/img/best/thumb/2026-08-18.aaaaaaaa.240.jpg 240w`,
 		`data-best="/img/best/2026-08-18.aaaaaaaa.jpg"`,
 		`class="vh"`,
