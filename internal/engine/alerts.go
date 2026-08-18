@@ -9,7 +9,6 @@ import (
 	"image/jpeg"
 	"log/slog"
 	"os"
-	"sync"
 	"time"
 
 	"github.com/davidtorcivia/westward/internal/config"
@@ -27,8 +26,6 @@ type AlertManager struct {
 	Log       *slog.Logger
 	Notifiers map[string]notify.Notifier
 	IDs       []string // enabled notifier ids in definition order
-
-	mu sync.Mutex
 }
 
 func (m *AlertManager) notifierIDs() []string { return m.IDs }

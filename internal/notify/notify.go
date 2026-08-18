@@ -84,13 +84,6 @@ type Ntfy struct {
 
 func (n *Ntfy) Name() string { return "ntfy" }
 
-func (n *Ntfy) priority(p Priority) string {
-	if p == PriorityHigh {
-		return "4"
-	}
-	return "3"
-}
-
 func (n *Ntfy) Send(ctx context.Context, a Alert) error {
 	url := n.Server + "/" + n.Topic
 	priorityHdr := map[Priority]string{PriorityNormal: "3", PriorityHigh: "4"}
