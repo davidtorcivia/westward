@@ -55,8 +55,8 @@ func TestSecurityHeaders(t *testing.T) {
 	resp := get(t, ts.URL+"/livez", nil)
 	resp.Body.Close()
 	for k, want := range map[string]string{
-		"X-Content-Type-Options": "nosniff",
-		"X-Frame-Options":        "DENY",
+		"X-Content-Type-Options":  "nosniff",
+		"X-Frame-Options":         "DENY",
 		"Content-Security-Policy": "default-src 'none'; img-src 'self'; style-src 'self'; script-src 'self'",
 	} {
 		if got := resp.Header.Get(k); got != want {

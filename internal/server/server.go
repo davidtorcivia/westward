@@ -28,8 +28,8 @@ type Auth struct {
 	User     string
 	PWDigest [32]byte // sha256 of the password
 
-	mu      sync.Mutex
-	fails   map[string][]time.Time // ip -> recent failure timestamps
+	mu    sync.Mutex
+	fails map[string][]time.Time // ip -> recent failure timestamps
 }
 
 func NewAuth(user, password string) *Auth {

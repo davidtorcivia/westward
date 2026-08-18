@@ -1,0 +1,110 @@
+[
+ {
+  "id": "8a6bc417-4877-4ebe-8052-88c1b261baf1",
+  "name": "Central Park West @ 86 St",
+  "latitude": 40.785302,
+  "longitude": -73.969353,
+  "area": "Manhattan",
+  "isOnline": "true",
+  "imageUrl": "https://webcams.nyctmc.org/api/cameras/8a6bc417-4877-4ebe-8052-88c1b261baf1/image"
+ },
+ {
+  "id": "8cc75cbc-e050-4947-aee8-639f63fe4ca7",
+  "name": "Canal Street @ Chrystie Street",
+  "latitude": 40.715821,
+  "longitude": -73.994913,
+  "area": "Manhattan",
+  "isOnline": "true",
+  "imageUrl": "https://webcams.nyctmc.org/api/cameras/8cc75cbc-e050-4947-aee8-639f63fe4ca7/image"
+ },
+ {
+  "id": "300e0508-3c7e-4ac5-8527-b75bcf8292b8",
+  "name": "Hillside Ave @ Little Neck Pkwy",
+  "latitude": 40.736207,
+  "longitude": -73.713777,
+  "area": "Queens",
+  "isOnline": "true",
+  "imageUrl": "https://webcams.nyctmc.org/api/cameras/300e0508-3c7e-4ac5-8527-b75bcf8292b8/image"
+ },
+ {
+  "id": "1b3248f9-f26e-4f36-943f-b7a7731595fb",
+  "name": "QBB @ Crescent St",
+  "latitude": 40.750889,
+  "longitude": -73.940613,
+  "area": "Queens",
+  "isOnline": "true",
+  "imageUrl": "https://webcams.nyctmc.org/api/cameras/1b3248f9-f26e-4f36-943f-b7a7731595fb/image"
+ },
+ {
+  "id": "ec9eda79-e250-4e6f-a8f6-e51021fb054f",
+  "name": "Amsterdam Ave @ 60 St",
+  "latitude": 40.771057,
+  "longitude": -73.987139,
+  "area": "Manhattan",
+  "isOnline": "true",
+  "imageUrl": "https://webcams.nyctmc.org/api/cameras/ec9eda79-e250-4e6f-a8f6-e51021fb054f/image"
+ },
+ {
+  "id": "b221fdc4-ca81-41ae-875e-bf0341377758",
+  "name": "C1-BRE-06_W - WB_at_CBX-Hutch_Int-EX6A",
+  "latitude": 40.829767,
+  "longitude": -73.834824,
+  "area": "Bronx",
+  "isOnline": "true",
+  "imageUrl": "https://webcams.nyctmc.org/api/cameras/b221fdc4-ca81-41ae-875e-bf0341377758/image"
+ },
+ {
+  "id": "8afc5cd6-f735-47e8-bd57-6e6d3b81b442",
+  "name": "WBB-20 @ Above Bedford Ave ( Berry St )",
+  "latitude": 40.711356,
+  "longitude": -73.96519,
+  "area": "Manhattan",
+  "isOnline": "true",
+  "imageUrl": "https://webcams.nyctmc.org/api/cameras/8afc5cd6-f735-47e8-bd57-6e6d3b81b442/image"
+ },
+ {
+  "id": "0472fa7a-acd7-4510-a9e7-61307d4057cd",
+  "name": "Bay Pkwy @ 78 St (Kings Hwy)",
+  "latitude": 40.60632,
+  "longitude": -73.989087,
+  "area": "Brooklyn",
+  "isOnline": "true",
+  "imageUrl": "https://webcams.nyctmc.org/api/cameras/0472fa7a-acd7-4510-a9e7-61307d4057cd/image"
+ },
+ {
+  "id": "ec1e7b42-18de-4475-8c89-9e80f21e5b6c",
+  "name": "FDR Drive @ 122 St",
+  "latitude": 40.798685,
+  "longitude": -73.929148,
+  "area": "Manhattan",
+  "isOnline": "true",
+  "imageUrl": "https://webcams.nyctmc.org/api/cameras/ec1e7b42-18de-4475-8c89-9e80f21e5b6c/image"
+ },
+ {
+  "id": "98fc3e41-66be-42d7-8f69-5cc76ae7226f",
+  "name": "BB - Manhattan hub - 156.103",
+  "latitude": 40.710977,
+  "longitude": -74.003594,
+  "area": "Manhattan",
+  "isOnline": "true",
+  "imageUrl": "https://webcams.nyctmc.org/api/cameras/98fc3e41-66be-42d7-8f69-5cc76ae7226f/image"
+ },
+ {
+  "id": "09afb231-ef10-470f-bf54-0f44fc2dc18f",
+  "name": "Pelham Shore Rd @ City Island Rd",
+  "latitude": 40.864552,
+  "longitude": -73.813781,
+  "area": "Bronx",
+  "isOnline": "true",
+  "imageUrl": "https://webcams.nyctmc.org/api/cameras/09afb231-ef10-470f-bf54-0f44fc2dc18f/image"
+ },
+ {
+  "id": "0039e6bf-5244-4b4e-b7dc-d02056bbfdc9",
+  "name": "Atlantic Ave @ 111 St",
+  "latitude": 40.692157,
+  "longitude": -73.834927,
+  "area": "Brooklyn",
+  "isOnline": "true",
+  "imageUrl": "https://webcams.nyctmc.org/api/cameras/0039e6bf-5244-4b4e-b7dc-d02056bbfdc9/image"
+ }
+]

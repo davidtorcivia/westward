@@ -18,7 +18,7 @@ type Clock interface {
 // Real is the wall clock.
 type Real struct{}
 
-func (Real) Now() time.Time                { return time.Now() }
+func (Real) Now() time.Time                         { return time.Now() }
 func (Real) After(d time.Duration) <-chan time.Time { return time.After(d) }
 
 // Fake is a manually advanced clock for tests. After channels fire in

@@ -12,7 +12,7 @@ type Heartbeat struct {
 	lastMS atomic.Int64
 }
 
-func (h *Heartbeat) Beat()                     { h.lastMS.Store(time.Now().UnixMilli()) }
+func (h *Heartbeat) Beat() { h.lastMS.Store(time.Now().UnixMilli()) }
 func (h *Heartbeat) Healthy(max time.Duration) bool {
 	last := h.lastMS.Load()
 	return last != 0 && time.Since(time.UnixMilli(last)) <= max

@@ -39,15 +39,15 @@ type LocationSeed struct {
 
 // NotifierDef is one delivery channel. Secrets are env var NAMES, never values.
 type NotifierDef struct {
-	ID      string `yaml:"id"`
-	Type    string `yaml:"type"` // ntfy | pushover | webhook
-	Enabled bool   `yaml:"enabled"`
-	Server  string `yaml:"server"` // ntfy
-	Topic   string `yaml:"topic"`  // ntfy
+	ID       string `yaml:"id"`
+	Type     string `yaml:"type"` // ntfy | pushover | webhook
+	Enabled  bool   `yaml:"enabled"`
+	Server   string `yaml:"server"`    // ntfy
+	Topic    string `yaml:"topic"`     // ntfy
 	TokenEnv string `yaml:"token_env"` // ntfy (optional), pushover token, sunsethue
 	UserEnv  string `yaml:"user_env"`  // pushover user key
-	URL     string `yaml:"url"`     // webhook
-	HMACEnv string `yaml:"hmac_env"` // webhook (optional; WESTWARD_WEBHOOK_HMAC_KEY)
+	URL      string `yaml:"url"`       // webhook
+	HMACEnv  string `yaml:"hmac_env"`  // webhook (optional; WESTWARD_WEBHOOK_HMAC_KEY)
 }
 
 // Settings is the runtime-editable configuration, stored as one JSON row in
