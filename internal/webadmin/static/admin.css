@@ -632,3 +632,15 @@ dialog#modal::backdrop { background: rgba(6, 3, 14, 0.72); }
 .modal-img { display: block; width: 100%; max-height: 52vh; object-fit: contain;
   background: var(--sunken); border-radius: 12px; }
 .modal-status { margin-top: 8px; color: var(--dimmer); font-size: 12.5px; }
+
+/* labels */
+.labelgrid { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 16px; }
+.labelcard { background: var(--sunken); border-radius: 14px; padding: 12px; }
+.labelcard .pv { width: 100%; aspect-ratio: 16/9; object-fit: cover; border-radius: 10px; background: var(--surface); }
+.labelcard .name { font-size: 13px; color: var(--dim); margin: 8px 0; min-height: 1.2em; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.tagbtns { display: flex; gap: 8px; }
+
+/* forecast breakdown */
+.fparts summary { cursor: pointer; color: var(--dimmer); font-size: 12px; margin-top: 6px; }
+.parts { text-align: left; font-size: 11.5px; color: var(--dim); background: var(--sunken);
+  border-radius: 10px; padding: 10px; margin: 8px 0 0; overflow-x: auto; white-space: pre-wrap; }

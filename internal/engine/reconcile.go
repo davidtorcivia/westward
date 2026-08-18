@@ -40,6 +40,12 @@ func readFile(p string) ([]byte, error) {
 	return os.ReadFile(p)
 }
 
+// CameraROIFromStore converts stored nullable ROI columns into a score ROI
+// (exported twin for admin preview scoring).
+func CameraROIFromStore(cam store.Camera) *score.ROI {
+	return cameraROI(cam)
+}
+
 // cameraROI converts stored nullable ROI columns into a score ROI.
 func cameraROI(cam store.Camera) *score.ROI {
 	if cam.ROIX == nil || cam.ROIY == nil || cam.ROIW == nil || cam.ROIH == nil {

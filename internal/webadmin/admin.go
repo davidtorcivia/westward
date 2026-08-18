@@ -18,6 +18,7 @@ import (
 
 	"github.com/davidtorcivia/westward/internal/config"
 	"github.com/davidtorcivia/westward/internal/engine"
+	"github.com/davidtorcivia/westward/internal/score"
 	"github.com/davidtorcivia/westward/internal/secutil"
 	"github.com/davidtorcivia/westward/internal/server"
 	"github.com/davidtorcivia/westward/internal/source"
@@ -70,6 +71,9 @@ var funcs = template.FuncMap{
 		return v
 	},
 	"printDur": func(secs int) time.Duration { return time.Duration(secs) * time.Second },
+	"ts":       func(msUTC int64) string { return time.UnixMilli(msUTC).Format("Jan 2 15:04") },
+	"sub":      func(a, b float64) float64 { return a - b },
+	"mul":      func(a, b float64) float64 { return a * b },
 }
 
 func rectJSON(x, y, w, h *float64) string {
@@ -129,6 +133,8 @@ func (a *Admin) Register(s *server.Server) {
 	s.Admin("GET /admin/static/", func(w http.ResponseWriter, r *http.Request) {
 		staticHandler.ServeHTTP(w, r)
 	})
+	s.Admin("GET /admin/labels", a.labelsPage)
+	s.Admin("POST /admin/labels/tag", a.labelTag)
 	s.Admin("GET /admin/map", a.mapPage)
 	s.Admin("GET /admin/map/data", a.mapData)
 	s.Admin("POST /admin/dot/refresh", a.dotRefresh)
@@ -690,4 +696,63 @@ func (a *Admin) HookAuth() {
 	} else {
 		a.Auth.Verify = nil
 	}
+}
+
+// labelsPage: tag current frames sunset/not-sunset and review past tags.
+func (a *Admin) labelsPage(w http.ResponseWriter, r *http.Request) {
+	cams, _ := a.Store.ListCameras()
+	recent, _ := a.Store.RecentLabels(30)
+	baselines, _ := a.Store.LabelBaselines()
+	names := map[string]string{}
+	for _, c := range cams {
+		names[c.ID] = c.Name
+	}
+	a.render(w, r, []string{"labels"}, map[string]any{
+		"Cameras": cams, "Recent": recent, "Baselines": baselines, "Names": names,
+	})
+}
+
+// labelTag records one ground-truth tag, snapshotting the current frame's
+// diagnostics (fetched live so the tag reflects what the operator sees).
+func (a *Admin) labelTag(w http.ResponseWriter, r *http.Request) {
+	camID := r.PostFormValue("camera")
+	kind := r.PostFormValue("kind")
+	if kind != "sunset" && kind != "not_sunset" {
+		http.Error(w, "bad kind", http.StatusBadRequest)
+		return
+	}
+	cam, err := a.Store.GetCamera(camID)
+	if err != nil {
+		http.Error(w, "camera not found", http.StatusNotFound)
+		return
+	}
+	if a.Preview == nil {
+		http.Error(w, "preview unavailable", http.StatusServiceUnavailable)
+		return
+	}
+	jpegBytes, fw, fh, err := a.Preview(cam)
+	if err != nil {
+		http.Error(w, "fetch failed: "+secutil.Redact(err.Error()), http.StatusBadGateway)
+		return
+	}
+	res, err := score.ScoreBytes(jpegBytes, engine.CameraROIFromStore(cam), fw, fh)
+	if err != nil {
+		http.Error(w, "score failed: "+err.Error(), http.StatusBadGateway)
+		return
+	}
+	now := time.Now()
+	l := &store.FrameLabel{
+		CameraID: camID, Kind: kind, TaggedUTC: now.UnixMilli(),
+		LocalDate: now.Format("2006-01-02"),
+		Score:     res.Score, SunsetPixelFraction: res.SunsetPixelFraction,
+		MedianL: res.MedianL, MeanChroma: res.MeanQualifyingChroma,
+		ScoringVersion: res.ScoringVersion,
+		Notes:          strings.TrimSpace(r.PostFormValue("notes")),
+	}
+	if err := a.Store.InsertFrameLabel(l); err != nil {
+		http.Error(w, "store: "+err.Error(), http.StatusInternalServerError)
+		return
+	}
+	a.Log.Info("frame tagged", "camera", cam.Name, "kind", kind, "score", res.Score)
+	http.Redirect(w, r, "/admin/labels", http.StatusSeeOther)
 }

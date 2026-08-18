@@ -4,6 +4,13 @@
 <p class="ok">{{.Test}}</p>
 {{end}}
 <section class="card">
+  <div class="mapbar">
+    <form method="post" action="/admin/alerts/test" class="inline">
+      <input type="hidden" name="csrf" value="{{$.CSRF}}" />
+      <button class="btn sm">send test notification</button>
+    </form>
+    <p class="hint">fires one test event to every enabled channel · deliveries and retries show below</p>
+  </div>
   <h2>Events</h2>
   {{if not .Events}}
   <p>none yet</p>

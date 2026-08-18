@@ -599,6 +599,21 @@ func (s *Store) InsertForecastObservation(localDate, provider string, fetchedUTC
 	return err
 }
 
+// InsertForecastObservationFull also persists the heuristic components JSON.
+func (s *Store) InsertForecastObservationFull(localDate, provider string, fetchedUTC, eventUTC int64,
+	quality float64, detail, rawJSON, algoVersion string, selected bool, componentsJSON string) error {
+	var lead *int64
+	if eventUTC > 0 && fetchedUTC > 0 {
+		l := (eventUTC - fetchedUTC) / 60000
+		lead = &l
+	}
+	_, err := s.db.Exec(`INSERT INTO forecast_observations(local_date,provider,fetched_utc,event_utc,
+lead_minutes,quality,detail,raw_json,algorithm_version,selected,components_json)
+VALUES(?,?,?,?,?,?,?,?,?,?,?)`, localDate, provider, fetchedUTC, nn(eventUTC), lead,
+		quality, nullStr(detail), rawJSON, algoVersion, selected, nullStr(componentsJSON))
+	return err
+}
+
 type ForecastObs struct {
 	LocalDate  string
 	Provider   string
@@ -608,25 +623,26 @@ type ForecastObs struct {
 	Detail     string
 	Selected   bool
 	Algorithm  string
+	Components string
 }
 
 // LatestForecastObservation returns the date's most recent observation for a
 // provider.
 func (s *Store) LatestForecastObservation(localDate, provider string) (ForecastObs, bool, error) {
 	var o ForecastObs
-	var detail sql.NullString
+	var detail, comps sql.NullString
 	var ev sql.NullInt64
 	var sel int
-	err := s.db.QueryRow(`SELECT local_date,provider,fetched_utc,event_utc,quality,detail,algorithm_version,selected
+	err := s.db.QueryRow(`SELECT local_date,provider,fetched_utc,event_utc,quality,detail,algorithm_version,selected,components_json
 	FROM forecast_observations WHERE local_date=? AND provider=? ORDER BY fetched_utc DESC LIMIT 1`,
-		localDate, provider).Scan(&o.LocalDate, &o.Provider, &o.FetchedUTC, &ev, &o.Quality, &detail, &o.Algorithm, &sel)
+		localDate, provider).Scan(&o.LocalDate, &o.Provider, &o.FetchedUTC, &ev, &o.Quality, &detail, &o.Algorithm, &sel, &comps)
 	if errors.Is(err, sql.ErrNoRows) {
 		return o, false, nil
 	}
 	if err != nil {
 		return o, false, err
 	}
-	o.EventUTC, o.Detail, o.Selected = ev.Int64, detail.String, sel == 1
+	o.EventUTC, o.Detail, o.Selected, o.Components = ev.Int64, detail.String, sel == 1, comps.String
 	return o, true, nil
 }
 
@@ -870,6 +886,105 @@ func (s *Store) ListNYCTMCNearest(lat, lon float64, limit int) ([]NYCTMCCacheEnt
 		}
 		e.Online = on == 1
 		out = append(out, e)
+	}
+	return out, rows.Err()
+}
+
+// FrameLabel is one operator ground-truth tag with snapshotted diagnostics.
+type FrameLabel struct {
+	ID                                              int64
+	CameraID                                        string
+	Kind                                            string
+	TaggedUTC                                       int64
+	LocalDate                                       string
+	Score, SunsetPixelFraction, MedianL, MeanChroma float64
+	ScoringVersion                                  string
+	Notes                                           string
+}
+
+// InsertFrameLabel records a tag (score fields snapshotted by the caller).
+func (s *Store) InsertFrameLabel(l *FrameLabel) error {
+	_, err := s.db.Exec(`INSERT INTO frame_labels(camera_id,kind,tagged_utc,local_date,
+	score,sunset_pixel_fraction,median_l,mean_chroma,scoring_version,notes)
+	VALUES(?,?,?,?,?,?,?,?,?,?)`, l.CameraID, l.Kind, l.TaggedUTC, l.LocalDate,
+		l.Score, l.SunsetPixelFraction, l.MedianL, l.MeanChroma,
+		l.ScoringVersion, nullStr(l.Notes))
+	return err
+}
+
+// LabelBaseline aggregates a camera's sunset vs not-sunset tag averages.
+type LabelBaseline struct {
+	CameraID     string
+	SunsetN      int
+	SunsetAvg    float64
+	NotSunsetN   int
+	NotSunsetAvg float64
+}
+
+// LabelBaselines aggregates per camera: avg score for each kind and counts.
+// This is the sunset / not-sunset separation signal for tuning.
+func (s *Store) LabelBaselines() ([]LabelBaseline, error) {
+	rows, err := s.db.Query(`SELECT camera_id, kind, COUNT(*), AVG(score)
+	FROM frame_labels GROUP BY camera_id, kind`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	type agg struct {
+		CameraID     string
+		SunsetN      int
+		SunsetAvg    float64
+		NotSunsetN   int
+		NotSunsetAvg float64
+	}
+	m := map[string]*agg{}
+	var order []string
+	for rows.Next() {
+		var cam, kind string
+		var n int
+		var avg float64
+		if err := rows.Scan(&cam, &kind, &n, &avg); err != nil {
+			return nil, err
+		}
+		a, ok := m[cam]
+		if !ok {
+			a = &agg{CameraID: cam}
+			m[cam] = a
+			order = append(order, cam)
+		}
+		if kind == "sunset" {
+			a.SunsetN, a.SunsetAvg = n, avg
+		} else {
+			a.NotSunsetN, a.NotSunsetAvg = n, avg
+		}
+	}
+	out := make([]LabelBaseline, 0, len(order))
+	for _, cam := range order {
+		a := m[cam]
+		out = append(out, LabelBaseline{a.CameraID, a.SunsetN, a.SunsetAvg, a.NotSunsetN, a.NotSunsetAvg})
+	}
+	return out, rows.Err()
+}
+
+// RecentLabels returns the newest tags for the review page.
+func (s *Store) RecentLabels(limit int) ([]FrameLabel, error) {
+	rows, err := s.db.Query(`SELECT id,camera_id,kind,tagged_utc,local_date,
+	COALESCE(score,0),COALESCE(sunset_pixel_fraction,0),COALESCE(median_l,0),
+	COALESCE(mean_chroma,0),COALESCE(scoring_version,''),COALESCE(notes,'')
+	FROM frame_labels ORDER BY tagged_utc DESC LIMIT ?`, limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []FrameLabel
+	for rows.Next() {
+		var l FrameLabel
+		if err := rows.Scan(&l.ID, &l.CameraID, &l.Kind, &l.TaggedUTC, &l.LocalDate,
+			&l.Score, &l.SunsetPixelFraction, &l.MedianL, &l.MeanChroma,
+			&l.ScoringVersion, &l.Notes); err != nil {
+			return nil, err
+		}
+		out = append(out, l)
 	}
 	return out, rows.Err()
 }

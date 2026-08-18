@@ -592,8 +592,9 @@ func (e *Engine) fetchForecasts(ctx context.Context, date string, ev solar.Event
 			e.Log.Warn("forecast fetch failed", "provider", p.Name(), "err", err.Error())
 			return
 		}
-		if err := e.Store.InsertForecastObservation(date, p.Name(), time.Now().UnixMilli(),
-			f.EventUTC.UnixMilli(), f.Quality, f.Detail, string(f.RawJSON), f.AlgoVersion, sel); err != nil {
+		if err := e.Store.InsertForecastObservationFull(date, p.Name(), time.Now().UnixMilli(),
+			f.EventUTC.UnixMilli(), f.Quality, f.Detail, string(f.RawJSON), f.AlgoVersion, sel,
+			string(f.ComponentsJSON)); err != nil {
 			e.Log.Error("forecast store failed", "provider", p.Name(), "err", err.Error())
 		} else {
 			e.Log.Info("forecast stored", "provider", p.Name(), "quality", f.Quality, "selected", sel)

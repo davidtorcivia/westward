@@ -24,12 +24,13 @@ type Provider interface {
 
 // Forecast is the normalized result.
 type Forecast struct {
-	Provider    string
-	EventUTC    time.Time
-	Quality     float64 // 0..100
-	Detail      string
-	RawJSON     []byte
-	AlgoVersion string
+	Provider       string
+	EventUTC       time.Time
+	Quality        float64 // 0..100
+	Detail         string
+	RawJSON        []byte
+	AlgoVersion    string
+	ComponentsJSON []byte // openmeteo: full heuristic breakdown; others: nil
 }
 
 // sharedClient: 10s timeout, 1 MiB body cap on every provider call.
@@ -76,9 +77,23 @@ func (t Tuning) sanitized() Tuning {
 	return t
 }
 
-// Heuristic computes openmeteo-h1 quality from the hourly row nearest
-// sunset. Inputs: cloud cover low/mid/high (0-100), visibility (m), rh (0-100).
-func Heuristic(ccLow, ccMid, ccHigh, visibility, rh float64, t Tuning) float64 {
+// Components records every input and intermediate of openmeteo-h1 so the
+// heuristic can be audited and retuned against observed outcomes later.
+type Components struct {
+	CCLow      float64 `json:"cc_low"`
+	CCMid      float64 `json:"cc_mid"`
+	CCHigh     float64 `json:"cc_high"`
+	Visibility float64 `json:"visibility_m"`
+	RH         float64 `json:"rh_pct"`
+	MidHigh    float64 `json:"mid_high"`
+	CloudScore float64 `json:"cloud_score"`
+	LowPenalty float64 `json:"low_penalty"`
+	VisBonus   float64 `json:"vis_bonus"`
+	HumPenalty float64 `json:"hum_penalty"`
+}
+
+// HeuristicParts computes openmeteo-h1 and returns every component.
+func HeuristicParts(ccLow, ccMid, ccHigh, visibility, rh float64, t Tuning) (Components, float64) {
 	t = t.sanitized()
 	mid, high, low := ccMid/100, ccHigh/100, ccLow/100
 	midHigh := clamp01(math.Max(mid, high) + t.Overlap*math.Min(mid, high))
@@ -86,7 +101,20 @@ func Heuristic(ccLow, ccMid, ccHigh, visibility, rh float64, t Tuning) float64 {
 	lowPenalty := t.LowPenalty * low
 	visBonus := math.Max(0, math.Min(10, (visibility-10000)/2000))
 	humPenalty := math.Max(0, rh-70) * t.HumPenalty
-	return clamp(0, 100, cloudScore-lowPenalty+visBonus-humPenalty)
+	c := Components{
+		CCLow: ccLow, CCMid: ccMid, CCHigh: ccHigh,
+		Visibility: visibility, RH: rh,
+		MidHigh: midHigh, CloudScore: cloudScore,
+		LowPenalty: lowPenalty, VisBonus: visBonus, HumPenalty: humPenalty,
+	}
+	return c, clamp(0, 100, cloudScore-lowPenalty+visBonus-humPenalty)
+}
+
+// Heuristic computes openmeteo-h1 quality from the hourly row nearest
+// sunset. Inputs: cloud cover low/mid/high (0-100), visibility (m), rh (0-100).
+func Heuristic(ccLow, ccMid, ccHigh, visibility, rh float64, t Tuning) float64 {
+	_, q := HeuristicParts(ccLow, ccMid, ccHigh, visibility, rh, t)
+	return q
 }
 
 func clamp01(v float64) float64 { return clamp(0, 1, v) }
@@ -197,14 +225,16 @@ func (o *OpenMeteo) SunsetForecast(ctx context.Context, lat, lon float64, localD
 	if best >= len(h.CCLow) || best >= len(h.CCHigh) || best >= len(h.Vis) || best >= len(h.RH) {
 		return Forecast{}, fmt.Errorf("openmeteo: hourly arrays length mismatch")
 	}
-	q := Heuristic(h.CCLow[best], h.CCMid[best], h.CCHigh[best], h.Vis[best], h.RH[best], o.Tuning)
+	comps, q := HeuristicParts(h.CCLow[best], h.CCMid[best], h.CCHigh[best], h.Vis[best], h.RH[best], o.Tuning)
+	compsJSON, _ := json.Marshal(comps)
 	return Forecast{
-		Provider:    "openmeteo",
-		EventUTC:    target.UTC(),
-		Quality:     math.Round(q*10) / 10,
-		Detail:      fmt.Sprintf("cc low/mid/high %.0f/%.0f/%.0f, vis %.0fm, rh %.0f%%", h.CCLow[best], h.CCMid[best], h.CCHigh[best], h.Vis[best], h.RH[best]),
-		RawJSON:     raw,
-		AlgoVersion: "openmeteo-h1",
+		Provider:       "openmeteo",
+		EventUTC:       target.UTC(),
+		Quality:        math.Round(q*10) / 10,
+		Detail:         fmt.Sprintf("cc low/mid/high %.0f/%.0f/%.0f, vis %.0fm, rh %.0f%%", h.CCLow[best], h.CCMid[best], h.CCHigh[best], h.Vis[best], h.RH[best]),
+		RawJSON:        raw,
+		AlgoVersion:    "openmeteo-h1",
+		ComponentsJSON: compsJSON,
 	}, nil
 }
 

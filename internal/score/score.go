@@ -8,8 +8,10 @@
 package score
 
 import (
+	"bytes"
 	"fmt"
 	"image"
+	"image/jpeg"
 	"math"
 
 	"golang.org/x/image/draw"
@@ -213,4 +215,14 @@ func median(v []float64) float64 {
 		return s[m]
 	}
 	return (s[m-1] + s[m]) / 2
+}
+
+// ScoreBytes decodes a JPEG and scores it with the given ROI (nil = default).
+// w/h come from the caller (already sniffed by the fetch path).
+func ScoreBytes(b []byte, roi *ROI, _, _ int) (Result, error) {
+	img, err := jpeg.Decode(bytes.NewReader(b))
+	if err != nil {
+		return Result{ScoringVersion: ScoringVersion}, err
+	}
+	return Score(img, roi)
 }

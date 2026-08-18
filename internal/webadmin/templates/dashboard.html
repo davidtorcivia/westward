@@ -19,9 +19,14 @@
       .SH.Quality}}{{end}}</span
     >
     <span class="lbl dim"
-      >floor {{.Settings.QualityFloor}} · provider
-      {{.Settings.Forecast.Provider}}</span
+      >0 gray · 45+ maybe · 70+ go look · floor {{.Settings.QualityFloor}}
+      · provider {{.Settings.Forecast.Provider}}</span
     >
+    {{if .OM.Components}}
+    <details class="fparts"><summary>why this score</summary>
+      <pre class="parts">{{.OM.Components}}</pre>
+    </details>
+    {{end}}
     {{else}}<span class="big dim">?</span
     ><span class="lbl">forecast fetches at {{.Sunset.Format "15:04"}}</span
     >{{end}}

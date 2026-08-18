@@ -1,0 +1,83 @@
+{{template "head" .}}
+<h1>Labels · ground truth</h1>
+{{with .Data}}
+<section class="card">
+  <h2>Tag the sky right now</h2>
+  <p class="hint">
+    Look at each camera's live frame and tag what you see. Sunset means real
+    color worth alerting on · not sunset means gray/blue/night, even if pretty.
+    Tags snapshot the frame's diagnostics, building the sunset vs not-sunset
+    baseline that tunes thresholds per camera.
+  </p>
+  <div class="labelgrid">
+    {{range .Cameras}}
+    {{if .Enabled}}
+    <div class="labelcard" data-cam="{{.ID}}">
+      <img class="pv" loading="lazy" alt="{{.Name}} live"
+        src="/admin/cameras/shot/{{.ID}}" />
+      <p class="name">{{.Name}}</p>
+      <div class="tagbtns">
+        <form method="post" action="/admin/labels/tag" class="inline">
+          <input type="hidden" name="csrf" value="{{$.CSRF}}" />
+          <input type="hidden" name="camera" value="{{.ID}}" />
+          <input type="hidden" name="kind" value="sunset" />
+          <button class="btn sm">sunset</button>
+        </form>
+        <form method="post" action="/admin/labels/tag" class="inline">
+          <input type="hidden" name="csrf" value="{{$.CSRF}}" />
+          <input type="hidden" name="camera" value="{{.ID}}" />
+          <input type="hidden" name="kind" value="not_sunset" />
+          <button class="btn ghost sm">not sunset</button>
+        </form>
+      </div>
+    </div>
+    {{end}}
+    {{end}}
+  </div>
+</section>
+
+<section class="card">
+  <h2>Baselines</h2>
+  {{if .Baselines}}
+  <table>
+    <tr><th>camera</th><th>sunset tags</th><th>avg score</th><th>not-sunset tags</th><th>avg score</th><th>separation</th></tr>
+    {{range .Baselines}}
+    <tr>
+      <td>{{index $.Data.Names .CameraID}}</td>
+      <td>{{.SunsetN}}</td>
+      <td>{{if .SunsetN}}{{printf "%.1f" .SunsetAvg}}{{end}}</td>
+      <td>{{.NotSunsetN}}</td>
+      <td>{{if .NotSunsetN}}{{printf "%.1f" .NotSunsetAvg}}{{end}}</td>
+      <td>{{if and .SunsetN .NotSunsetN}}{{printf "%.1f" (sub .SunsetAvg .NotSunsetAvg)}}{{else}}-{{end}}</td>
+    </tr>
+    {{end}}
+  </table>
+  <p class="hint">
+    Separation is how far the sunset average sits above not-sunset on that
+    camera. Thresholds should sit between the two averages; a small or
+    negative separation means the scoring ROI needs tightening first.
+  </p>
+  {{else}}<p class="dim">no tags yet · start with today's sky</p>{{end}}
+</section>
+
+<section class="card">
+  <h2>Recent tags</h2>
+  {{if .Recent}}
+  <table>
+    <tr><th>when</th><th>camera</th><th>tag</th><th>score</th><th>pixels</th><th>L*</th><th>chroma</th></tr>
+    {{range .Recent}}
+    <tr>
+      <td>{{ts .TaggedUTC}}</td>
+      <td>{{index $.Data.Names .CameraID}}</td>
+      <td>{{if eq .Kind "sunset"}}<span class="ok">sunset</span>{{else}}<span class="dim">not sunset</span>{{end}}</td>
+      <td>{{printf "%.1f" .Score}}</td>
+      <td>{{printf "%.0f%%" (mul .SunsetPixelFraction 100)}}</td>
+      <td>{{printf "%.0f" .MedianL}}</td>
+      <td>{{printf "%.0f" .MeanChroma}}</td>
+    </tr>
+    {{end}}
+  </table>
+  {{else}}<p class="dim">none yet</p>{{end}}
+</section>
+{{end}}
+{{template "foot" .}}
