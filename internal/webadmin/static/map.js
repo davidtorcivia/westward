@@ -9,10 +9,34 @@
     parseFloat(el.dataset.lon || "-73.9442"),
   ];
   var map = L.map("map").setView(home, 12);
-  L.tileLayer("https://tile.openstreetmap.org/{z}/{x}/{y}.png", {
-    maxZoom: 18,
-    attribution: "&copy; OpenStreetMap contributors",
+
+  // Dark basemap matching the dusk theme (CARTO darkMatter over OSM data).
+  L.tileLayer("https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png", {
+    maxZoom: 19,
+    subdomains: "abcd",
+    attribution: "&copy; OpenStreetMap contributors &copy; CARTO",
   }).addTo(map);
+
+  // DOT cameras sit on their own layer, shown only when zoomed in enough
+  // to actually pick one (at city level 970 dots is visual noise).
+  var dotLayer = L.layerGroup();
+  var hint = document.querySelector(".mapbar .hint");
+
+  function hintUpdate() {
+    if (!hint) return;
+    var on = map.getZoom() >= 14;
+    hint.textContent = on
+      ? "Gold markers are your cameras · dim dots are DOT cameras, click one to add it"
+      : "Gold markers are your cameras · zoom in to browse DOT cameras";
+  }
+  function dotUpdate() {
+    if (map.getZoom() >= 14) map.addLayer(dotLayer);
+    else map.removeLayer(dotLayer);
+  }
+  map.on("zoomend", () => {
+    dotUpdate();
+    hintUpdate();
+  });
 
   function addCamera(fields) {
     var f = document.createElement("form");
@@ -63,13 +87,15 @@
 
       (d.dot || []).forEach((c) => {
         var m = L.circleMarker([c.Lat, c.Lon], {
-          radius: 3,
-          color: "rgba(210,180,160,0.45)",
+          radius: 3.5,
+          color: "rgba(240,190,160,0.6)",
           weight: 1,
-          fillOpacity: c.Online ? 0.55 : 0.15,
+          fillOpacity: c.Online ? 0.7 : 0.2,
           fillColor: "#c9a08a",
-        }).addTo(map);
-        m.bindTooltip(c.Name + (c.Online ? "" : " (offline) · click to add"));
+        }).addTo(dotLayer);
+        m.bindTooltip(
+          c.Name + (c.Online ? " · click to add" : " (offline) · click to add"),
+        );
         m.on("click", () => {
           if (window.confirm("Add DOT camera " + c.Name + "?")) {
             addCamera([
@@ -88,5 +114,8 @@
           }
         });
       });
+
+      dotUpdate();
+      hintUpdate();
     });
 })();

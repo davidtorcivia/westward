@@ -661,3 +661,5 @@ canvas.roi {
   background: var(--grad-btn);
   color: var(--ink);
 }
+
+.inline-hint { margin-left: 10px; }
