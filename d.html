@@ -1,0 +1,142 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>westward admin</title>
+    <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
+    <link rel="stylesheet" href="/admin/static/admin.css" />
+  </head>
+  <body>
+    <nav class="bar">
+      <a class="brand" href="/admin">westward</a>
+      <a href="/admin/cameras">cameras</a>
+      <a href="/admin/map">map</a>
+      <a href="/admin/labels">labels</a>
+      <a href="/admin/frames">frames</a>
+      <a href="/admin/alerts">alerts</a>
+      <a href="/admin/notifiers">notifiers</a>
+      <a href="/admin/forecast">forecast</a>
+      <a href="/admin/settings">settings</a>
+      <span class="spacer"></span>
+      <a href="/" target="_blank">gallery ↗</a>
+      <form method="post" action="/admin/logout" class="inline logout">
+        <input type="hidden" name="csrf" value="191cb101ed1fec2fce53924e7903fcd7fbc51c9957b82def84aeb07ad73f5877" />
+        <button class="linklike">sign out</button>
+      </form>
+    </nav>
+    <main class="wrap">
+<h1>Today</h1>
+
+<section class="hero card">
+  
+  <div class="hero-sun">
+    <span class="big">19:49</span>
+    <span class="lbl">sunset · dusk 20:18</span>
+    <span class="lbl dim"
+      >window 20:19 to 20:38</span
+    >
+  </div>
+  <div class="hero-forecast">
+    <span class="big">0</span>
+    <span class="lbl"
+      >openmeteo · sunsethue 14</span
+    >
+    <span class="lbl dim"
+      >0 gray · 45+ maybe · 70+ go look · floor 45
+      · provider openmeteo</span
+    >
+    
+    
+  </div>
+  <div class="hero-go">
+    <span class="chip chip-go">GO fired</span>
+    <span class="lbl"></span>
+  </div>
+  
+</section>
+
+<section class="card">
+  <h2>Cameras</h2>
+  
+  <table>
+    <tr>
+      <th>name</th>
+      <th>type</th>
+      <th>role</th>
+      <th>state</th>
+      <th>live</th>
+      <th></th>
+    </tr>
+    
+    <tr class="">
+      <td>Ft Washington @ 179 St</td>
+      <td>nyctmc</td>
+      <td>trigger_only</td>
+      <td>
+        ok
+      </td>
+      <td>on</td>
+      <td><a href="/admin/cameras#edit-06G1E42PFQYR2ESNMHCDBBVDYC">edit · crop</a></td>
+    </tr>
+    
+    <tr class="">
+      <td>WBB - NOR - 3 @  Kent Ave North</td>
+      <td>nyctmc</td>
+      <td>publish_primary</td>
+      <td>
+        ok
+      </td>
+      <td>on</td>
+      <td><a href="/admin/cameras#edit-06G1ED4ASJHWN01J063FA6BD54">edit · crop</a></td>
+    </tr>
+    
+  </table>
+  
+</section>
+
+<section class="card">
+  <h2>Last days</h2>
+  <table>
+    <tr>
+      <th>date</th>
+      <th>status</th>
+      <th>score</th>
+      <th>re-render</th>
+    </tr>
+    
+    <tr>
+      <td>2026-08-18</td>
+      <td>
+        failed <small class="dim">(eligible frames exist but no publish-eligible camera)</small>
+      </td>
+      <td></td>
+      <td>
+        
+        <form method="post" action="/admin/refinalize" class="inline">
+          <input type="hidden" name="csrf" value="191cb101ed1fec2fce53924e7903fcd7fbc51c9957b82def84aeb07ad73f5877" />
+          <input type="hidden" name="date" value="2026-08-18" />
+          <button class="btn ghost sm">re-finalize</button>
+        </form>
+      </td>
+    </tr>
+    
+  </table>
+</section>
+
+<section class="card">
+  <h2>Test notification</h2>
+  <form method="post" action="/admin/alerts/test" class="inline">
+    <input type="hidden" name="csrf" value="191cb101ed1fec2fce53924e7903fcd7fbc51c9957b82def84aeb07ad73f5877" />
+    <button class="btn sm">send test</button>
+  </form>
+  <span class="hint"
+    >delivers to every enabled channel ·
+    <a href="/admin/notifiers">configure channels</a></span
+  >
+</section>
+ </main>
+    <script src="/admin/static/admin.js" defer></script>
+  </body>
+</html>
+

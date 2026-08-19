@@ -59,12 +59,10 @@ type AlertSender interface {
 }
 
 // ensureSettings self-heals direct calls (Finalize/Recrop/Retention from
-// tests or admin) that skip Run's periodic reload.
+// tests or admin) by always reloading: one cheap query, and admin edits
+// must apply to the very next direct call.
 func (e *Engine) ensureSettings() error {
-	if e.loc == nil {
-		return e.loadSettings()
-	}
-	return nil
+	return e.loadSettings()
 }
 
 func (e *Engine) loadSettings() error {

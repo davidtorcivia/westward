@@ -130,6 +130,7 @@ func (a *Admin) Register(s *server.Server) {
 	s.Admin("POST /admin/settings/save", a.settingsSave)
 	s.Admin("GET /admin/status", a.status)
 	s.Admin("POST /admin/recrop", a.recrop)
+	s.Admin("POST /admin/refinalize", a.refinalize)
 	staticHandler := http.StripPrefix("/admin/static/", http.FileServer(http.FS(mustSub())))
 	s.Admin("GET /admin/static/", func(w http.ResponseWriter, r *http.Request) {
 		staticHandler.ServeHTTP(w, r)
@@ -839,4 +840,19 @@ func dateAdd(date string, days int) string {
 		return date
 	}
 	return t.AddDate(0, 0, days).Format("2006-01-02")
+}
+
+// refinalize re-runs day finalization from stored frames (failed or stuck
+// days; idempotent for completed days).
+func (a *Admin) refinalize(w http.ResponseWriter, r *http.Request) {
+	date := r.PostFormValue("date")
+	if a.Engine == nil {
+		http.Error(w, "engine not running", http.StatusServiceUnavailable)
+		return
+	}
+	if err := a.Engine.FinalizeDay(r.Context(), date); err != nil {
+		http.Error(w, "finalize: "+err.Error(), http.StatusInternalServerError)
+		return
+	}
+	http.Redirect(w, r, "/admin", http.StatusSeeOther)
 }

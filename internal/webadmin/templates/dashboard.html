@@ -93,8 +93,12 @@
           <input type="hidden" name="csrf" value="{{$.CSRF}}" />
           <input type="hidden" name="date" value="{{.Date}}" />
           <button class="btn ghost sm">re-render</button>
-        </form>
-        {{end}}
+        </form>{{else if ne .Status "missed"}}
+        <form method="post" action="/admin/refinalize" class="inline">
+          <input type="hidden" name="csrf" value="{{$.CSRF}}" />
+          <input type="hidden" name="date" value="{{.Date}}" />
+          <button class="btn ghost sm">re-finalize</button>
+        </form>{{end}}
       </td>
     </tr>
     {{end}}

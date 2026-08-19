@@ -112,7 +112,11 @@ func Defaults() Settings {
 	s.Capture.IntervalS = 45
 	s.Capture.BeforeS = 1800
 	s.Capture.AfterS = 1200
-	s.Archive.CutoffAfterDuskS = 300
+	// Archive cutoff matches the capture window end: frames captured inside
+	// the window are archival candidates (the darkness floor excludes true
+	// night). The original 5m default discarded the final 15m of every
+	// window, including real late color.
+	s.Archive.CutoffAfterDuskS = 1200
 	s.Archive.DarknessFloor = 10
 	s.Trigger.ThresholdAbs = 12.0
 	s.Trigger.Ratio = 1.6
