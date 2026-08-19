@@ -10,11 +10,14 @@
     baseline that tunes thresholds per camera.
   </p>
   <div class="labelgrid">
-    {{range .Cameras}}
-    {{if .Enabled}}
+    {{range .Cameras}} {{if .Enabled}}
     <div class="labelcard" data-cam="{{.ID}}">
-      <img class="pv" loading="lazy" alt="{{.Name}} live"
-        src="/admin/cameras/shot/{{.ID}}" />
+      <img
+        class="pv"
+        loading="lazy"
+        alt="{{.Name}} live"
+        src="/admin/cameras/shot/{{.ID}}"
+      />
       <p class="name">{{.Name}}</p>
       <div class="tagbtns">
         <form method="post" action="/admin/labels/tag" class="inline">
@@ -31,8 +34,7 @@
         </form>
       </div>
     </div>
-    {{end}}
-    {{end}}
+    {{end}} {{end}}
   </div>
 </section>
 
@@ -40,7 +42,14 @@
   <h2>Baselines</h2>
   {{if .Baselines}}
   <table>
-    <tr><th>camera</th><th>sunset tags</th><th>avg score</th><th>not-sunset tags</th><th>avg score</th><th>separation</th></tr>
+    <tr>
+      <th>camera</th>
+      <th>sunset tags</th>
+      <th>avg score</th>
+      <th>not-sunset tags</th>
+      <th>avg score</th>
+      <th>separation</th>
+    </tr>
     {{range .Baselines}}
     <tr>
       <td>{{index $.Data.Names .CameraID}}</td>
@@ -48,28 +57,46 @@
       <td>{{if .SunsetN}}{{printf "%.1f" .SunsetAvg}}{{end}}</td>
       <td>{{.NotSunsetN}}</td>
       <td>{{if .NotSunsetN}}{{printf "%.1f" .NotSunsetAvg}}{{end}}</td>
-      <td>{{if and .SunsetN .NotSunsetN}}{{printf "%.1f" (sub .SunsetAvg .NotSunsetAvg)}}{{else}}-{{end}}</td>
+      <td>
+        {{if and .SunsetN .NotSunsetN}}{{printf "%.1f" (sub .SunsetAvg
+        .NotSunsetAvg)}}{{else}}-{{end}}
+      </td>
     </tr>
     {{end}}
   </table>
   <p class="hint">
     Separation is how far the sunset average sits above not-sunset on that
-    camera. Thresholds should sit between the two averages; a small or
-    negative separation means the scoring ROI needs tightening first.
+    camera. Thresholds should sit between the two averages; a small or negative
+    separation means the scoring ROI needs tightening first.
   </p>
-  {{else}}<p class="dim">no tags yet · start with today's sky</p>{{end}}
+  {{else}}
+  <p class="dim">no tags yet · start with today's sky</p>
+  {{end}}
 </section>
 
 <section class="card">
   <h2>Recent tags</h2>
   {{if .Recent}}
   <table>
-    <tr><th>when</th><th>camera</th><th>tag</th><th>score</th><th>pixels</th><th>L*</th><th>chroma</th></tr>
+    <tr>
+      <th>when</th>
+      <th>camera</th>
+      <th>tag</th>
+      <th>score</th>
+      <th>pixels</th>
+      <th>L*</th>
+      <th>chroma</th>
+    </tr>
     {{range .Recent}}
     <tr>
       <td>{{ts .TaggedUTC}}</td>
       <td>{{index $.Data.Names .CameraID}}</td>
-      <td>{{if eq .Kind "sunset"}}<span class="ok">sunset</span>{{else}}<span class="dim">not sunset</span>{{end}}</td>
+      <td>
+        {{if eq .Kind "sunset"}}<span class="ok">sunset</span>{{else}}<span
+          class="dim"
+          >not sunset</span
+        >{{end}}
+      </td>
       <td>{{printf "%.1f" .Score}}</td>
       <td>{{printf "%.0f%%" (mul .SunsetPixelFraction 100)}}</td>
       <td>{{printf "%.0f" .MedianL}}</td>
@@ -77,7 +104,8 @@
     </tr>
     {{end}}
   </table>
-  {{else}}<p class="dim">none yet</p>{{end}}
+  {{else}}
+  <p class="dim">none yet</p>
+  {{end}}
 </section>
-{{end}}
-{{template "foot" .}}
+{{end}} {{template "foot" .}}

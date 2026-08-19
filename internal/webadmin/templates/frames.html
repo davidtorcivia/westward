@@ -1,0 +1,37 @@
+{{template "head" .}}
+<h1>Captured frames</h1>
+{{with .Data}}
+<section class="card">
+  <div class="mapbar">
+    {{if ne .Date .Today}}<a class="btn ghost sm" href="/admin/frames?date={{.Today}}">today</a>{{end}}
+    <a class="btn ghost sm" href="/admin/frames?date={{.Yesterday}}">← {{.Yesterday}}</a>
+    <strong class="dateline">{{.Date}}</strong>
+    {{if ne .Date .Today}}<a class="btn ghost sm" href="/admin/frames?date={{.Tomorrow}}">{{.Tomorrow}} →</a>{{end}}
+  </div>
+</section>
+
+{{if not .Seqs}}
+<section class="card"><p class="dim">no frames captured this date</p></section>
+{{end}}
+
+{{range .Seqs}}
+<section class="card">
+  <h2>{{.Name}} · {{len .Frames}} frames</h2>
+  <div class="framegrid">
+    {{range .Frames}}
+    <figure class="framecell {{if ne .Valid "ok"}}invalid{{end}}">
+      <a href="/admin/frames/img/{{.ID}}" target="_blank" rel="noopener">
+        <img loading="lazy" decoding="async" src="/admin/frames/img/{{.ID}}" alt="frame {{ts .FetchedUTC}}" />
+      </a>
+      <figcaption>
+        <span class="t">{{ts .FetchedUTC}}</span>
+        {{if .Score}}<span class="s">{{printf "%.1f" .Score}}</span>{{end}}
+        {{if ne .Valid "ok"}}<span class="warn">{{.Valid}}</span>{{end}}
+      </figcaption>
+    </figure>
+    {{end}}
+  </div>
+</section>
+{{end}}
+{{end}}
+{{template "foot" .}}

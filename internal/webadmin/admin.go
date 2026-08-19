@@ -12,6 +12,7 @@ import (
 	"net"
 	"net/http"
 	"net/url"
+	"os"
 	"strconv"
 	"strings"
 	"time"
@@ -135,6 +136,8 @@ func (a *Admin) Register(s *server.Server) {
 	})
 	s.Admin("GET /admin/labels", a.labelsPage)
 	s.Admin("POST /admin/labels/tag", a.labelTag)
+	s.Admin("GET /admin/frames", a.framesPage)
+	s.Admin("GET /admin/frames/img/{id}", a.frameImage)
 	s.Admin("GET /admin/map", a.mapPage)
 	s.Admin("GET /admin/map/data", a.mapData)
 	s.Admin("POST /admin/dot/refresh", a.dotRefresh)
@@ -755,4 +758,71 @@ func (a *Admin) labelTag(w http.ResponseWriter, r *http.Request) {
 	}
 	a.Log.Info("frame tagged", "camera", cam.Name, "kind", kind, "score", res.Score)
 	http.Redirect(w, r, "/admin/labels", http.StatusSeeOther)
+}
+
+// framesPage: the day's captured sequence per camera (viewer for capture
+// runs; also answers "what did we get tonight").
+func (a *Admin) framesPage(w http.ResponseWriter, r *http.Request) {
+	date := r.URL.Query().Get("date")
+	if date == "" {
+		date = time.Now().Format("2006-01-02")
+	}
+	frames, _ := a.Store.FramesForDate(date)
+	cams, _ := a.Store.ListCameras()
+	names := map[string]string{}
+	for _, c := range cams {
+		names[c.ID] = c.Name
+	}
+	byCam := map[string][]store.CapturedFrame{}
+	var order []string
+	for _, f := range frames {
+		if _, ok := byCam[f.CameraID]; !ok {
+			order = append(order, f.CameraID)
+		}
+		byCam[f.CameraID] = append(byCam[f.CameraID], f)
+	}
+	type camSeq struct {
+		Name   string
+		Frames []store.CapturedFrame
+	}
+	seqs := make([]camSeq, 0, len(order))
+	for _, id := range order {
+		seqs = append(seqs, camSeq{Name: names[id], Frames: byCam[id]})
+	}
+	yesterday := dateAdd(date, -1)
+	tomorrow := dateAdd(date, 1)
+	a.render(w, r, []string{"frames"}, map[string]any{
+		"Date": date, "Seqs": seqs, "Yesterday": yesterday, "Tomorrow": tomorrow,
+		"Today": time.Now().Format("2006-01-02"),
+	})
+}
+
+// frameImage serves one stored capture (path from DB, never user input).
+func (a *Admin) frameImage(w http.ResponseWriter, r *http.Request) {
+	id, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
+	if err != nil || id <= 0 {
+		http.NotFound(w, r)
+		return
+	}
+	path, ok, err := a.Store.FramePathByID(id)
+	if err != nil || !ok {
+		http.NotFound(w, r)
+		return
+	}
+	data, err := os.ReadFile(path)
+	if err != nil {
+		http.NotFound(w, r)
+		return
+	}
+	w.Header().Set("Content-Type", "image/jpeg")
+	w.Header().Set("Cache-Control", "no-store")
+	w.Write(data)
+}
+
+func dateAdd(date string, days int) string {
+	t, err := time.Parse("2006-01-02", date)
+	if err != nil {
+		return date
+	}
+	return t.AddDate(0, 0, days).Format("2006-01-02")
 }

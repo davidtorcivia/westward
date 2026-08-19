@@ -988,3 +988,55 @@ func (s *Store) RecentLabels(limit int) ([]FrameLabel, error) {
 	}
 	return out, rows.Err()
 }
+
+// CapturedFrame is one row of a capture sequence for the frames viewer.
+type CapturedFrame struct {
+	ID         int64
+	CameraID   string
+	FetchedUTC int64
+	Score      *float64
+	MedianL    *float64
+	Valid      string
+	Path       string
+}
+
+// FramesForDate returns the day's captured frames newest-last.
+func (s *Store) FramesForDate(localDate string) ([]CapturedFrame, error) {
+	rows, err := s.db.Query(`SELECT id,camera_id,fetched_utc,score,median_l,valid,path
+	FROM frames WHERE local_date=? ORDER BY fetched_utc`, localDate)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []CapturedFrame
+	for rows.Next() {
+		var f CapturedFrame
+		var sc, ml sql.NullFloat64
+		if err := rows.Scan(&f.ID, &f.CameraID, &f.FetchedUTC, &sc, &ml, &f.Valid, &f.Path); err != nil {
+			return nil, err
+		}
+		if sc.Valid {
+			v := sc.Float64
+			f.Score = &v
+		}
+		if ml.Valid {
+			v := ml.Float64
+			f.MedianL = &v
+		}
+		out = append(out, f)
+	}
+	return out, rows.Err()
+}
+
+// FramePathByID returns the stored path for an id (viewer image serving).
+func (s *Store) FramePathByID(id int64) (string, bool, error) {
+	var p string
+	err := s.db.QueryRow(`SELECT path FROM frames WHERE id=?`, id).Scan(&p)
+	if errors.Is(err, sql.ErrNoRows) {
+		return "", false, nil
+	}
+	if err != nil {
+		return "", false, err
+	}
+	return p, true, nil
+}
