@@ -456,7 +456,21 @@ func triggerJSON(f url.Values) string {
 }
 
 func (a *Admin) cameraDelete(w http.ResponseWriter, r *http.Request) {
-	a.Store.DeleteCamera(r.PostFormValue("id"))
+	id := r.PostFormValue("id")
+	paths, err := a.Store.FramePathsForCamera(id)
+	if err != nil {
+		http.Error(w, "lookup: "+err.Error(), http.StatusInternalServerError)
+		return
+	}
+	if err := a.Store.DeleteCameraCascade(id); err != nil {
+		http.Error(w, "delete: "+err.Error(), http.StatusInternalServerError)
+		return
+	}
+	for _, p := range paths {
+		if err := os.Remove(p); err != nil && !os.IsNotExist(err) {
+			a.Log.Warn("frame file left behind", "path", p, "err", err.Error())
+		}
+	}
 	http.Redirect(w, r, "/admin/cameras", http.StatusSeeOther)
 }
 

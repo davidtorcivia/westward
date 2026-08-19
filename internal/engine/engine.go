@@ -120,6 +120,14 @@ func (e *Engine) nextEvent(now time.Time) (time.Time, string) {
 		// Solar failure (extreme latitudes): retry at next daily rollover.
 		return e.atLocal(today, 0, 5), "daily-plan"
 	}
+	// Inside the window: wake immediately so tick resumes capture (window
+	// start itself is in the past and would otherwise never fire).
+	wStart := ev.Sunset.Add(-time.Duration(e.settings.Capture.BeforeS) * time.Second)
+	wEnd := ev.Dusk.Add(time.Duration(e.settings.Capture.AfterS) * time.Second)
+	if !now.Before(wStart) && now.Before(wEnd) {
+		return now.Add(time.Second), "window-resume"
+	}
+
 	cands := []struct {
 		t time.Time
 		n string

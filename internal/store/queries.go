@@ -1040,3 +1040,43 @@ func (s *Store) FramePathByID(id int64) (string, bool, error) {
 	}
 	return p, true, nil
 }
+
+// FramePathsForCamera lists stored frame file paths (for cleanup on delete).
+func (s *Store) FramePathsForCamera(cameraID string) ([]string, error) {
+	rows, err := s.db.Query(`SELECT path FROM frames WHERE camera_id=?`, cameraID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []string
+	for rows.Next() {
+		var p string
+		if err := rows.Scan(&p); err != nil {
+			return nil, err
+		}
+		out = append(out, p)
+	}
+	return out, rows.Err()
+}
+
+// DeleteCameraCascade removes a camera plus its frames and labels, and
+// clears days references, in one transaction. Frame files are the caller's
+// to remove (store has no data root).
+func (s *Store) DeleteCameraCascade(id string) error {
+	tx, err := s.db.Begin()
+	if err != nil {
+		return err
+	}
+	for _, q := range []string{
+		`DELETE FROM frames WHERE camera_id=?`,
+		`DELETE FROM frame_labels WHERE camera_id=?`,
+		`UPDATE days SET best_camera_id=NULL WHERE best_camera_id=?`,
+		`DELETE FROM cameras WHERE id=?`,
+	} {
+		if _, err := tx.Exec(q, id); err != nil {
+			tx.Rollback()
+			return err
+		}
+	}
+	return tx.Commit()
+}
